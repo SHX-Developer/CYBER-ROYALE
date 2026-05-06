@@ -19,8 +19,14 @@
 export const TILE = 40;
 export const COLS = 9;
 export const ROWS = 18;
-export const ARENA_WIDTH = COLS * TILE; // 360
-export const ARENA_HEIGHT = ROWS * TILE; // 720
+export const ARENA_WIDTH = COLS * TILE; // 360 — игровая ширина
+export const ARENA_HEIGHT = ROWS * TILE; // 720 — игровая высота (мир)
+
+// Декоративные «трибуны» сверху и снизу — не часть игрового мира,
+// просто арт, чтобы убрать чёрные рамки letterbox-а у Phaser FIT.
+export const TOP_STAND_PX = 56;
+export const BOTTOM_STAND_PX = 44;
+export const SCENE_HEIGHT = TOP_STAND_PX + ARENA_HEIGHT + BOTTOM_STAND_PX;
 
 export const RIVER_TOP_ROW = 8;
 export const RIVER_BOTTOM_ROW = 9; // обе строки = вода
