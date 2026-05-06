@@ -47,10 +47,18 @@ export const LANES: Record<Lane, { col: number }> = {
   right: { col: 6 }, // тайл 6 (центр оси на 6.5)
 };
 
-/** Башни занимают 2×2 тайла, расположение зеркальное. */
-export interface Tower {
-  side: Side;
-  kind: 'king' | 'princess';
+/**
+ * Описание расположения башен. Сами стат-показатели (HP, damage, range, …)
+ * живут в `tower.ts` — это исключительно геометрия.
+ *
+ * Башни-принцессы — 2×2 тайла, башня-король — 3×3, всё зеркально.
+ */
+export type TowerType = 'king' | 'princess';
+
+export interface TowerLayout {
+  id: string;
+  team: Side;
+  type: TowerType;
   lane?: Lane; // у princess; у king нет
   rect: RectInTiles;
 }
@@ -60,23 +68,26 @@ const PRINCESS_H = 2;
 const KING_W = 3;
 const KING_H = 3;
 
-export const TOWERS: Tower[] = [
+export const TOWER_LAYOUTS: TowerLayout[] = [
   // вражеские (верх)
   {
-    side: 'enemy',
-    kind: 'princess',
+    id: 'enemy-princess-left',
+    team: 'enemy',
+    type: 'princess',
     lane: 'left',
     rect: { col: 0, row: 2, w: PRINCESS_W, h: PRINCESS_H },
   },
   {
-    side: 'enemy',
-    kind: 'princess',
+    id: 'enemy-princess-right',
+    team: 'enemy',
+    type: 'princess',
     lane: 'right',
     rect: { col: COLS - PRINCESS_W, row: 2, w: PRINCESS_W, h: PRINCESS_H },
   },
   {
-    side: 'enemy',
-    kind: 'king',
+    id: 'enemy-king',
+    team: 'enemy',
+    type: 'king',
     rect: {
       col: Math.floor((COLS - KING_W) / 2),
       row: 0,
@@ -86,14 +97,16 @@ export const TOWERS: Tower[] = [
   },
   // игрока (низ)
   {
-    side: 'player',
-    kind: 'princess',
+    id: 'player-princess-left',
+    team: 'player',
+    type: 'princess',
     lane: 'left',
     rect: { col: 0, row: ROWS - 2 - PRINCESS_H, w: PRINCESS_W, h: PRINCESS_H },
   },
   {
-    side: 'player',
-    kind: 'princess',
+    id: 'player-princess-right',
+    team: 'player',
+    type: 'princess',
     lane: 'right',
     rect: {
       col: COLS - PRINCESS_W,
@@ -103,8 +116,9 @@ export const TOWERS: Tower[] = [
     },
   },
   {
-    side: 'player',
-    kind: 'king',
+    id: 'player-king',
+    team: 'player',
+    type: 'king',
     rect: {
       col: Math.floor((COLS - KING_W) / 2),
       row: ROWS - KING_H,
