@@ -20,6 +20,7 @@ ENV NODE_ENV=production
 RUN apk add --no-cache dumb-init openssl
 
 COPY --from=build /app/package*.json ./
+COPY --from=build /app/tsconfig.json ./tsconfig.json
 COPY --from=build /app/tsconfig.seed.json ./tsconfig.seed.json
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
