@@ -16,7 +16,6 @@ import {
   BOTTOM_STAND_PX,
   BRIDGES,
   COLS,
-  LANE_PATHS,
   PLAYER_FIRST_ROW,
   RIVER_BOTTOM_ROW,
   RIVER_TOP_ROW,
@@ -28,6 +27,7 @@ import {
   type Lane,
   type Side,
 } from './arena';
+import { TILE_GRID, isPlaceableForPlayer } from './tiles';
 import { Tower } from './tower';
 import { Unit, UNIT_STATS, type UnitType } from './unit';
 import { SPELL_STATS, type SpellCode } from './spells';
@@ -44,16 +44,24 @@ import { BattleEngine } from '@/battle/BattleEngine';
 
 interface TowerView {
   body: Phaser.GameObjects.Graphics;
+  /** Турель — поворачивается к цели. */
+  turret: Phaser.GameObjects.Graphics;
   hpBar: Phaser.GameObjects.Graphics;
   hpText: Phaser.GameObjects.Text;
   rangeCircle: Phaser.GameObjects.Graphics;
 }
 
 interface UnitView {
+  /** Тёмный эллипс на земле — даёт ощущение объёма. */
+  shadow: Phaser.GameObjects.Graphics;
+  /** Корпус юнита (чуть выше «земли», bobs при ходьбе). */
   body: Phaser.GameObjects.Graphics;
   hpBar: Phaser.GameObjects.Graphics;
   label: Phaser.GameObjects.Text;
 }
+
+/** Высота «корпуса» над землёй — псевдо-3D. */
+const UNIT_LIFT = 5;
 
 export class ArenaScene extends Phaser.Scene {
   private engine!: BattleEngine;
@@ -168,12 +176,28 @@ export class ArenaScene extends Phaser.Scene {
       if (u.isDead) continue;
       this.updateUnitView(u);
     }
-    // Снаряды — двигаем графику в точку из state.
+    // Снаряды — двигаем графику в точку из state, разворачиваем по направлению.
     for (const p of this.engine.state.projectiles) {
       const g = this.projectileViews.get(p.id);
-      if (g) {
-        g.x = p.x;
-        g.y = p.y;
+      if (!g) continue;
+      const px = (g.getData('px') as number | undefined) ?? p.x;
+      const py = (g.getData('py') as number | undefined) ?? p.y;
+      const dx = p.x - px;
+      const dy = p.y - py;
+      if (dx * dx + dy * dy > 0.4) g.rotation = Math.atan2(dy, dx);
+      g.x = p.x;
+      g.y = p.y;
+      g.setData('px', p.x);
+      g.setData('py', p.y);
+    }
+    // Поворот турелей башен к цели.
+    for (const tower of this.engine.state.towers) {
+      if (tower.isDestroyed) continue;
+      const view = this.towerViews.get(tower.id);
+      if (!view) continue;
+      const target = this.engine.getTowerTarget(tower);
+      if (target) {
+        view.turret.rotation = Math.atan2(target.y - tower.y, target.x - tower.x);
       }
     }
   }
@@ -258,20 +282,24 @@ export class ArenaScene extends Phaser.Scene {
       return;
     }
     const lane: Lane = x < ARENA_WIDTH / 2 ? 'left' : 'right';
-    this.engine.spawnUnit({ team: 'player', type: code as UnitType, lane });
+    const col = Math.floor(x / TILE);
+    const row = Math.floor(y / TILE);
+    this.engine.spawnUnit({
+      team: 'player',
+      type: code as UnitType,
+      lane,
+      cell: { col, row },
+    });
   }
 
   private isValidPlacement(code: CardCode, x: number, y: number): boolean {
     if (x < 0 || x > ARENA_WIDTH || y < 0 || y > ARENA_HEIGHT) return false;
     const card = CARDS[code];
     if (card.kind === 'spell') return true;
-    if (y < PLAYER_FIRST_ROW * TILE) return false;
-    for (const t of this.engine.state.towers) {
-      if (t.team !== 'player') continue;
-      const r = rectToPx(t.rect);
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return false;
-    }
-    return true;
+    // Юнит — проверяем тип клетки (вода/мост/башня запрещены).
+    const col = Math.floor(x / TILE);
+    const row = Math.floor(y / TILE);
+    return isPlaceableForPlayer(col, row);
   }
 
   private updateZoneOverlay(code: CardCode | null) {
@@ -433,17 +461,17 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private drawZones() {
+    // Рендерим клетки tile-by-tile по типу из TILE_GRID.
     const g = this.wG();
-    g.fillStyle(ARENA_COLORS.enemyZone, 1);
-    g.fillRect(0, 0, ARENA_WIDTH, RIVER_TOP_ROW * TILE);
-    g.fillStyle(ARENA_COLORS.playerZone, 1);
-    g.fillRect(
-      0,
-      (RIVER_BOTTOM_ROW + 1) * TILE,
-      ARENA_WIDTH,
-      ARENA_HEIGHT - (RIVER_BOTTOM_ROW + 1) * TILE,
-    );
-
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const t = TILE_GRID[r][c];
+        const fill = colorForTile(t, r);
+        if (fill === null) continue; // мост/река отрисовываются отдельно
+        g.fillStyle(fill, 1);
+        g.fillRect(c * TILE, r * TILE, TILE, TILE);
+      }
+    }
     // Текстура травы — мелкие тёмные «кустики» для разнообразия.
     const tufts = this.wG();
     tufts.fillStyle(0x000000, 0.1);
@@ -451,11 +479,9 @@ export class ArenaScene extends Phaser.Scene {
     for (let i = 0; i < 70; i++) {
       const x = rng() * ARENA_WIDTH;
       const y = rng() * ARENA_HEIGHT;
-      // не на реке
       if (y > RIVER_TOP_ROW * TILE - 4 && y < (RIVER_BOTTOM_ROW + 1) * TILE + 4) continue;
       tufts.fillRect(x, y, 2, 2);
     }
-    // Несколько светлых пятен — будто пробивающийся свет.
     tufts.fillStyle(0xffffff, 0.05);
     for (let i = 0; i < 40; i++) {
       const x = rng() * ARENA_WIDTH;
@@ -466,25 +492,19 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private drawLanes() {
-    const g = this.wG();
-    g.fillStyle(ARENA_COLORS.lane, 1);
-    g.lineStyle(1, ARENA_COLORS.laneStroke, 0.8);
-    for (const path of LANE_PATHS) {
-      const r = rectToPx(path);
-      g.fillRect(r.x, r.y, r.w, r.h);
-      g.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-    }
-    // Тёмные «камешки» вдоль дорожек — каменная мостовая.
+    // Дорожки уже отрисованы внутри drawZones() по TILE_GRID.
+    // Здесь — только декор: камешки на road-клетках.
     const stones = this.wG();
     stones.fillStyle(0x000000, 0.18);
     const rng = mulberry32(7);
-    for (const path of LANE_PATHS) {
-      const r = rectToPx(path);
-      for (let y = r.y + 4; y < r.y + r.h - 4; y += 6) {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (TILE_GRID[r][c] !== 'road') continue;
         for (let i = 0; i < 2; i++) {
           if (rng() < 0.45) continue;
-          const sx = r.x + 4 + rng() * (r.w - 8);
-          stones.fillCircle(sx, y, 1.4);
+          const sx = c * TILE + 4 + rng() * (TILE - 8);
+          const sy = r * TILE + 4 + rng() * (TILE - 8);
+          stones.fillCircle(sx, sy, 1.4);
         }
       }
     }
@@ -735,6 +755,17 @@ export class ArenaScene extends Phaser.Scene {
       crown.fillCircle(tower.x, tower.y - 1, 5);
     }
 
+    // Турель сверху корпуса — короткая «пушка», поворачивается к цели.
+    const turret = this.wG();
+    const turretLen = isKing ? 14 : 11;
+    const turretWidth = 4;
+    turret.fillStyle(0x111720, 1);
+    turret.fillRect(0, -turretWidth / 2, turretLen, turretWidth);
+    turret.lineStyle(1, 0xffffff, 0.18);
+    turret.strokeRect(0, -turretWidth / 2, turretLen, turretWidth);
+    turret.x = tower.x;
+    turret.y = tower.y;
+
     const hpBar = this.wG();
     const hpText = this.wT(tower.x, r.y + pad - 12, '', {
       fontFamily: 'system-ui, sans-serif',
@@ -743,7 +774,7 @@ export class ArenaScene extends Phaser.Scene {
       fontStyle: 'bold',
     }).setOrigin(0.5, 1);
 
-    this.towerViews.set(tower.id, { body, hpBar, hpText, rangeCircle });
+    this.towerViews.set(tower.id, { body, turret, hpBar, hpText, rangeCircle });
     this.updateTowerHud(tower);
   }
 
@@ -782,6 +813,7 @@ export class ArenaScene extends Phaser.Scene {
     const view = this.towerViews.get(tower.id);
     this.cameras.main.shake(320, 0.006);
     if (!view) return;
+    view.turret.setAlpha(0);
     const r = rectToPx(tower.rect);
     const flash = this.wG();
     flash.fillStyle(0xfff58c, 0.8);
@@ -804,15 +836,25 @@ export class ArenaScene extends Phaser.Scene {
     const fill = isPlayer ? ARENA_COLORS.playerTower : ARENA_COLORS.enemyTower;
     const stroke = isPlayer ? ARENA_COLORS.playerTowerEdge : ARENA_COLORS.enemyTowerEdge;
 
+    // Тень на земле — сжатый эллипс.
+    const shadow = this.wG();
+    shadow.fillStyle(0x000000, 0.42);
+    shadow.fillEllipse(0, 0, unit.radius * 1.9, unit.radius * 0.7);
+    shadow.x = unit.x;
+    shadow.y = unit.y;
+
+    // Корпус — поднят над землёй на UNIT_LIFT, с белым highlight для объёма.
     const body = this.wG();
     body.fillStyle(fill, 1);
     body.lineStyle(2, stroke, 1);
     body.fillCircle(0, 0, unit.radius);
     body.strokeCircle(0, 0, unit.radius);
+    body.fillStyle(0xffffff, 0.18);
+    body.fillCircle(-unit.radius * 0.3, -unit.radius * 0.4, unit.radius * 0.45);
     body.x = unit.x;
-    body.y = unit.y;
+    body.y = unit.y - UNIT_LIFT;
 
-    const label = this.wT(unit.x, unit.y, typeGlyph(unit.type), {
+    const label = this.wT(unit.x, unit.y - UNIT_LIFT, typeGlyph(unit.type), {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '11px',
       color: '#ffffff',
@@ -820,7 +862,7 @@ export class ArenaScene extends Phaser.Scene {
 
     const hpBar = this.wG();
 
-    this.unitViews.set(unit.id, { body, hpBar, label });
+    this.unitViews.set(unit.id, { shadow, body, hpBar, label });
     this.updateUnitView(unit);
 
     // Spawn-in animation.
@@ -840,15 +882,24 @@ export class ArenaScene extends Phaser.Scene {
   private updateUnitView(unit: Unit) {
     const view = this.unitViews.get(unit.id);
     if (!view) return;
+
+    // Walk-bob: при движении корпус слегка покачивается по Y синусоидой.
+    const bob =
+      unit.state === 'moving'
+        ? Math.sin(this.time.now / 110 + unit.x * 0.05) * 1.5
+        : 0;
+
+    view.shadow.x = unit.x;
+    view.shadow.y = unit.y;
     view.body.x = unit.x;
-    view.body.y = unit.y;
+    view.body.y = unit.y - UNIT_LIFT + bob;
     view.label.x = unit.x;
-    view.label.y = unit.y;
+    view.label.y = unit.y - UNIT_LIFT + bob;
 
     const barW = unit.radius * 2;
     const barH = 2;
     const barX = unit.x - unit.radius;
-    const barY = unit.y - unit.radius - 5;
+    const barY = unit.y - unit.radius - UNIT_LIFT - 4 + bob;
     const fill = unit.team === 'player' ? ARENA_COLORS.playerTower : ARENA_COLORS.enemyTower;
 
     const bar = view.hpBar;
@@ -873,10 +924,11 @@ export class ArenaScene extends Phaser.Scene {
     const view = this.unitViews.get(unit.id);
     if (!view) return;
     this.tweens.add({
-      targets: [view.body, view.hpBar, view.label],
+      targets: [view.shadow, view.body, view.hpBar, view.label],
       alpha: 0,
       duration: 250,
       onComplete: () => {
+        view.shadow.destroy();
         view.body.destroy();
         view.hpBar.destroy();
         view.label.destroy();
@@ -1018,6 +1070,23 @@ export function createGame(parent: HTMLElement): Phaser.Game {
     },
     scene: [ArenaScene],
   });
+}
+
+/** Цвет тайла по типу. null значит «отрисуется отдельно» (вода/мост — в своих методах). */
+function colorForTile(t: import('./tiles').TileType, row: number): number | null {
+  switch (t) {
+    case 'water':
+      return null; // отрисуется в drawRiver
+    case 'bridge':
+      return null; // отрисуется в drawBridges
+    case 'road':
+      return ARENA_COLORS.lane;
+    case 'tower_zone':
+    case 'grass':
+      return row < ROWS / 2 ? ARENA_COLORS.enemyZone : ARENA_COLORS.playerZone;
+    case 'blocked':
+      return 0x222222;
+  }
 }
 
 /** Мини-PRNG: детерминированные «случайные» числа для повторяемости декора. */

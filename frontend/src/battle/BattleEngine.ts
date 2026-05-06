@@ -11,16 +11,18 @@
 import {
   ARENA_HEIGHT,
   ARENA_WIDTH,
-  LANE_PATHS_PX,
+  COLS,
   LANES,
   PLAYER_FIRST_ROW,
   RIVER_TOP_ROW,
+  ROWS,
   TILE,
   TOWER_LAYOUTS,
   type Lane,
   type Side,
   type Vec,
 } from '@/game/arena';
+import { findPath, pathToPixels, type Cell } from '@/game/pathfinding';
 import { Tower } from '@/game/tower';
 import { Unit, type UnitType } from '@/game/unit';
 import { SPELL_STATS, type SpellCode } from '@/game/spells';
@@ -48,11 +50,15 @@ import type {
 const RANGED_THRESHOLD = 80;
 const PROJECTILE_SPEED = 360; // px/sec
 const PROJECTILE_HIT_RADIUS = 10;
+/** Жёсткий лимит юнитов на команду — для FPS на мобиле. */
+const MAX_UNITS_PER_TEAM = 20;
 
 export interface SpawnUnitParams {
   team: Side;
   type: UnitType;
   lane: Lane;
+  /** Опционально: точка спавна на сетке. Если не указано — спавн на линии. */
+  cell?: Cell;
 }
 
 export interface CastSpellParams {
@@ -336,14 +342,29 @@ export class BattleEngine {
 
   // ───── публичные команды ─────
 
-  spawnUnit(params: SpawnUnitParams): Unit {
-    const { team, type, lane } = params;
+  spawnUnit(params: SpawnUnitParams): Unit | null {
+    const { team, type, lane, cell } = params;
+
+    // Лимит юнитов на команду — отбиваем спавн, если переполнено.
+    const aliveOnTeam = this.state.units.filter(
+      (u) => u.team === team && !u.isDead,
+    ).length;
+    if (aliveOnTeam >= MAX_UNITS_PER_TEAM) return null;
+
     const laneCol = LANES[lane].col;
-    const x = laneCol * TILE + TILE / 2;
-    const y =
-      team === 'player'
-        ? (PLAYER_FIRST_ROW + 2) * TILE + TILE / 2
-        : (RIVER_TOP_ROW - 3) * TILE + TILE / 2;
+    const spawnCell: Cell = cell
+      ? cell
+      : team === 'player'
+        ? { col: laneCol, row: PLAYER_FIRST_ROW + 2 }
+        : { col: laneCol, row: RIVER_TOP_ROW - 3 };
+
+    const x = spawnCell.col * TILE + TILE / 2;
+    const y = spawnCell.row * TILE + TILE / 2;
+
+    // Целевая клетка — клетка ближайшей вражеской принцессы на той же стороне поля.
+    const targetCell = pickPrincessCell(team, lane);
+    const path = findPath(spawnCell, targetCell);
+    const waypoints: Vec[] = pathToPixels(path);
 
     const unit = new Unit({
       id: `u${this.nextUnitId++}-${type}-${team}`,
@@ -352,11 +373,16 @@ export class BattleEngine {
       lane,
       x,
       y,
-      waypoints: LANE_PATHS_PX[lane][team],
+      waypoints,
     });
     this.state.units.push(unit);
     this.emit({ kind: 'unitSpawned', unit });
     return unit;
+  }
+
+  /** Публичный аналог findTowerTarget — Phaser использует для поворота турели. */
+  getTowerTarget(tower: Tower): Unit | null {
+    return this.findTowerTarget(tower);
   }
 
   castSpell(params: CastSpellParams) {
@@ -424,3 +450,13 @@ export class BattleEngine {
 
 export type { Vec };
 export const ARENA = { width: ARENA_WIDTH, height: ARENA_HEIGHT };
+
+/** Целевая клетка вражеской принцессы для маршрутизации юнита. */
+function pickPrincessCell(team: Side, lane: Lane): Cell {
+  if (team === 'player') {
+    // Игрок идёт к ВЕРХНИМ принцессам.
+    return lane === 'left' ? { col: 0, row: 2 } : { col: COLS - 1, row: 2 };
+  }
+  // Враг идёт к НИЖНИМ принцессам.
+  return lane === 'left' ? { col: 0, row: ROWS - 4 } : { col: COLS - 1, row: ROWS - 4 };
+}
