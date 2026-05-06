@@ -10,6 +10,12 @@ services:
       PORT: 3000
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
       RUN_SEED: ${RUN_SEED:-1}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
     expose:
       - "3000"
     networks:
@@ -23,7 +29,8 @@ services:
         VITE_API_URL: ${VITE_API_URL:-/api}
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     expose:
       - "80"
 
