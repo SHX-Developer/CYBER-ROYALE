@@ -8,6 +8,9 @@ export default function ProfilePage() {
     return <SubPage title="Профиль" />;
   }
 
+  const winRate =
+    profile.battlesCount > 0 ? Math.round((profile.wins / profile.battlesCount) * 100) : 0;
+
   return (
     <SubPage title="Профиль">
       <div style={card}>
@@ -31,23 +34,25 @@ export default function ProfilePage() {
         </div>
 
         <div style={statsGrid}>
-          <Stat label="Уровень" value={profile.level} />
-          <Stat label="Монеты" value={profile.coins} icon="🪙" />
-          <Stat label="Гемы" value={profile.gems} icon="💎" />
+          <Stat label="Уровень" value={String(profile.level)} />
+          <Stat label="Опыт" value={`✨ ${profile.xp}`} />
+          <Stat label="Монеты" value={`🪙 ${profile.coins}`} />
+          <Stat label="Гемы" value={`💎 ${profile.gems}`} />
+          <Stat label="Битвы" value={String(profile.battlesCount)} />
+          <Stat label="Винрейт" value={`${winRate}%`} />
+          <Stat label="Победы" value={`🏆 ${profile.wins}`} />
+          <Stat label="Поражения" value={`💀 ${profile.losses}`} />
         </div>
       </div>
     </SubPage>
   );
 }
 
-function Stat({ label, value, icon }: { label: string; value: number; icon?: string }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div style={statBox}>
       <div style={{ fontSize: 11, opacity: 0.6, letterSpacing: 0.5 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, marginTop: 4 }}>
-        {icon && <span style={{ marginRight: 6 }}>{icon}</span>}
-        {value}
-      </div>
+      <div style={{ fontSize: 16, fontWeight: 700, marginTop: 4 }}>{value}</div>
     </div>
   );
 }
@@ -86,7 +91,7 @@ const avatarFallback: React.CSSProperties = {
 
 const statsGrid: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(3, 1fr)',
+  gridTemplateColumns: 'repeat(2, 1fr)',
   gap: 8,
 };
 

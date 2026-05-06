@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import type Phaser from 'phaser';
 import { createGame, getArenaScene } from '@/game/PhaserGame';
 import { useUiStore } from '@/store/uiStore';
+import { useUserStore } from '@/store/userStore';
+import { reportBattle } from '@/api/battles';
 import {
   CARDS,
   HAND_SIZE,
@@ -14,6 +16,13 @@ export default function BattlePage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const setScreen = useUiStore((s) => s.setScreen);
+
+  // Этап 27: после конца боя отправляем результат на backend.
+  const gameState = useBattleStore((s) => s.gameState);
+  const result = useBattleStore((s) => s.result);
+  const profile = useUserStore((s) => s.profile);
+  const setProfile = useUserStore((s) => s.setProfile);
+  const reportedRef = useRef(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -29,7 +38,30 @@ export default function BattlePage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (gameState === 'playing') {
+      reportedRef.current = false;
+      return;
+    }
+    if (!result || !profile || reportedRef.current) return;
+    reportedRef.current = true;
+
+    reportBattle({
+      userId: profile.id,
+      outcome: result.outcome,
+      destroyedTowers: result.towersDestroyed,
+      lostTowers: result.towersLost,
+      duration: result.durationSec,
+      rewardCoins: result.coinsEarned,
+      rewardXp: result.xpEarned,
+    })
+      .then((res) => setProfile(res.user))
+      // eslint-disable-next-line no-console
+      .catch((err) => console.warn('[battle] report failed', err));
+  }, [gameState, result, profile, setProfile]);
+
   const playAgain = () => {
+    reportedRef.current = false;
     const scene = getArenaScene(gameRef.current);
     if (scene) {
       scene.scene.restart(); // create() сам сбросит стор

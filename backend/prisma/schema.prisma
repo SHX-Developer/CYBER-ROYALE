@@ -12,16 +12,21 @@ datasource db {
 }
 
 model User {
-  id         String   @id @default(cuid())
-  telegramId String   @unique
-  username   String?
-  firstName  String?
-  photoUrl   String?
-  level      Int      @default(1)
-  coins      Int      @default(0)
-  gems       Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id           String   @id @default(cuid())
+  telegramId   String   @unique
+  username     String?
+  firstName    String?
+  photoUrl     String?
+  level        Int      @default(1)
+  coins        Int      @default(0)
+  gems         Int      @default(0)
+  // Этап 27 — статистика прогресса игрока
+  xp           Int      @default(0)
+  wins         Int      @default(0)
+  losses       Int      @default(0)
+  battlesCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   decks   Deck[]
   battles Battle[]
@@ -90,10 +95,16 @@ model Battle {
   mode      BattleMode
   status    BattleStatus @default(IN_PROGRESS)
   userId    String
-  deckId    String
+  deckId    String?
   startedAt DateTime     @default(now())
   endedAt   DateTime?
+  // Этап 27 — итог боя
+  duration        Int @default(0) // в секундах
+  destroyedTowers Int @default(0)
+  lostTowers      Int @default(0)
+  rewardCoins     Int @default(0)
+  rewardXp        Int @default(0)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deck Deck @relation(fields: [deckId], references: [id])
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deck Deck? @relation(fields: [deckId], references: [id])
 }

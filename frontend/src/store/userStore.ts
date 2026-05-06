@@ -9,6 +9,11 @@ export interface UserProfile {
   level: number;
   coins: number;
   gems: number;
+  // Этап 27/28 — статистика прогресса
+  xp: number;
+  wins: number;
+  losses: number;
+  battlesCount: number;
 }
 
 export type AuthStatus = 'idle' | 'loading' | 'authenticated' | 'error';
