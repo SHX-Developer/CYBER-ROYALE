@@ -4,6 +4,7 @@ import { createGame, getArenaScene } from '@/game/PhaserGame';
 import { useUiStore } from '@/store/uiStore';
 import { useUserStore } from '@/store/userStore';
 import { reportBattle } from '@/api/battles';
+import EnergyIcon from '@/components/EnergyIcon';
 import {
   CARDS,
   HAND_SIZE,
@@ -75,7 +76,7 @@ export default function BattlePage() {
       <div ref={containerRef} className="arena-tilt" style={canvasWrap} />
       <div className="arena-fog" />
 
-      <button onClick={() => setScreen('menu')} style={backBtn} aria-label="Выйти из боя">
+      <button onClick={() => setScreen('home')} style={backBtn} aria-label="Выйти из боя">
         ←
       </button>
 
@@ -86,7 +87,7 @@ export default function BattlePage() {
         <HandPanel />
       </div>
 
-      <ResultOverlay onExit={() => setScreen('menu')} onPlayAgain={playAgain} />
+      <ResultOverlay onExit={() => setScreen('home')} onPlayAgain={playAgain} />
     </div>
   );
 }
@@ -127,7 +128,10 @@ function EnergyBar() {
         }}
       />
       <div style={energyText}>
-        ⚡ {Math.floor(energy)} / {MAX_ENERGY}
+        <EnergyIcon size={11} />
+        <span style={{ marginLeft: 4 }}>
+          {Math.floor(energy)} / {MAX_ENERGY}
+        </span>
       </div>
     </div>
   );
@@ -182,7 +186,10 @@ function CardSlotButton({ card }: { card: CardDef }) {
     >
       <div style={cardIcon}>{card.icon}</div>
       <div style={cardName}>{card.name}</div>
-      <div style={cardCost}>⚡ {card.energyCost}</div>
+      <div style={cardCost}>
+        <EnergyIcon size={10} />
+        <span style={{ marginLeft: 3 }}>{card.energyCost}</span>
+      </div>
     </button>
   );
 }
@@ -193,7 +200,10 @@ function NextCardSlot({ card }: { card: CardDef | undefined }) {
     <div style={nextSlot}>
       <div style={nextLabel}>NEXT</div>
       <div style={{ fontSize: 18 }}>{card.icon}</div>
-      <div style={{ fontSize: 9, opacity: 0.7 }}>⚡{card.energyCost}</div>
+      <div style={{ fontSize: 9, opacity: 0.8, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+        <EnergyIcon size={9} />
+        <span>{card.energyCost}</span>
+      </div>
     </div>
   );
 }
@@ -340,11 +350,12 @@ const hudWrap: React.CSSProperties = {
 const energyOuter: React.CSSProperties = {
   position: 'relative',
   width: '100%',
-  height: 13,
+  height: 14,
   borderRadius: 999,
   background: 'rgba(11,13,18,0.65)',
   border: '1px solid rgba(255,255,255,0.12)',
   overflow: 'hidden',
+  boxShadow: '0 0 8px rgba(124, 92, 255, 0.18) inset',
 };
 
 const energyFill: React.CSSProperties = {
@@ -352,8 +363,9 @@ const energyFill: React.CSSProperties = {
   left: 0,
   top: 0,
   bottom: 0,
-  background: 'linear-gradient(90deg, #b08fff 0%, #7c5cff 100%)',
+  background: 'linear-gradient(90deg, #c8b0ff 0%, #7c5cff 60%, #5b3dd0 100%)',
   transition: 'width 200ms linear',
+  boxShadow: '0 0 10px rgba(124, 92, 255, 0.55)',
 };
 
 const energyText: React.CSSProperties = {
@@ -403,6 +415,8 @@ const cardName: React.CSSProperties = {
 const cardCost: React.CSSProperties = {
   fontSize: 10,
   opacity: 0.85,
+  display: 'inline-flex',
+  alignItems: 'center',
 };
 
 const nextSlot: React.CSSProperties = {

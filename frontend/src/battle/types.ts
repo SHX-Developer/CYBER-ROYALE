@@ -14,9 +14,31 @@ export interface EnergyState {
   enemy: number;
 }
 
+export interface Projectile {
+  id: string;
+  /** Команда стрелка — снаряд не задевает «своих». */
+  team: Side;
+  /** Текущая позиция в мировых координатах. */
+  x: number;
+  y: number;
+  /** Скорость в px/sec. */
+  speed: number;
+  damage: number;
+  /** Идентификатор юнита-цели; если умер — снаряд летит по последней позиции. */
+  targetUnitId?: string;
+  /** Идентификатор башни-цели. */
+  targetTowerId?: string;
+  /** Запасная фиксированная точка попадания (если цель ушла). */
+  fallbackX: number;
+  fallbackY: number;
+  /** Что показывать визуально: 'arrow' / 'magic'. */
+  kind: 'arrow' | 'magic';
+}
+
 export interface BattleEngineState {
   units: Unit[];
   towers: Tower[];
+  projectiles: Projectile[];
   energy: EnergyState;
   towersDestroyed: { player: number; enemy: number };
   /** Прошло мс с начала матча. */
@@ -42,6 +64,8 @@ export type BattleEvent =
   | { kind: 'towerDamaged'; tower: Tower; amount: number }
   | { kind: 'towerDestroyed'; tower: Tower }
   | { kind: 'spellCast'; code: SpellCode; x: number; y: number; team: Side }
+  | { kind: 'projectileSpawned'; projectile: Projectile }
+  | { kind: 'projectileHit'; projectile: Projectile }
   | { kind: 'energyChanged'; team: Side; value: number }
   | { kind: 'timeTick'; timeLeftMs: number }
   | { kind: 'gameOver'; outcome: BattleOutcome };

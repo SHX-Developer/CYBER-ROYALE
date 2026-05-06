@@ -1,18 +1,28 @@
-import SubPage from '@/components/SubPage';
 import { useUserStore } from '@/store/userStore';
 
 export default function ProfilePage() {
   const profile = useUserStore((s) => s.profile);
 
   if (!profile) {
-    return <SubPage title="Профиль" />;
+    return (
+      <div style={page}>
+        <header style={header}>
+          <h2 style={title}>Профиль</h2>
+        </header>
+        <div style={{ opacity: 0.55, padding: 32, textAlign: 'center' }}>Загрузка профиля…</div>
+      </div>
+    );
   }
 
   const winRate =
     profile.battlesCount > 0 ? Math.round((profile.wins / profile.battlesCount) * 100) : 0;
 
   return (
-    <SubPage title="Профиль">
+    <div style={page}>
+      <header style={header}>
+        <h2 style={title}>Профиль</h2>
+      </header>
+
       <div style={card}>
         <div style={row}>
           {profile.photoUrl ? (
@@ -44,7 +54,7 @@ export default function ProfilePage() {
           <Stat label="Поражения" value={`💀 ${profile.losses}`} />
         </div>
       </div>
-    </SubPage>
+    </div>
   );
 }
 
@@ -56,6 +66,24 @@ function Stat({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+const page: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  padding: '14px 16px 16px',
+  gap: 12,
+};
+
+const header: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+};
+
+const title: React.CSSProperties = {
+  margin: 0,
+  fontSize: 18,
+  letterSpacing: 1,
+};
 
 const card: React.CSSProperties = {
   display: 'flex',

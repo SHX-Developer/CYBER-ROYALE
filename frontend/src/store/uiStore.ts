@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 
-export type Screen = 'menu' | 'deck' | 'cards' | 'profile' | 'battle';
+/**
+ * Экраны приложения:
+ *   home / collection / battle / quests / profile — пять вкладок shell-layout
+ *   с постоянной нижней навигацией.
+ *   arena — полноэкранный экран матча, навигации нет.
+ */
+export type Screen = 'home' | 'collection' | 'battle' | 'quests' | 'profile' | 'arena';
 
 interface UiState {
   screen: Screen;
@@ -8,6 +14,6 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  screen: 'menu',
+  screen: 'home',
   setScreen: (screen) => set({ screen }),
 }));

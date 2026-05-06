@@ -65,6 +65,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private towerViews = new Map<string, TowerView>();
   private unitViews = new Map<string, UnitView>();
+  private projectileViews = new Map<string, Phaser.GameObjects.Graphics>();
 
   private playerEnergyTimer?: Phaser.Time.TimerEvent;
   private botEnergyTimer?: Phaser.Time.TimerEvent;
@@ -90,6 +91,7 @@ export class ArenaScene extends Phaser.Scene {
     this.botDeck = [...STARTER_DECK];
     this.towerViews.clear();
     this.unitViews.clear();
+    this.projectileViews.clear();
 
     this.cameras.main.setBackgroundColor('#0b0d12');
 
@@ -166,6 +168,14 @@ export class ArenaScene extends Phaser.Scene {
       if (u.isDead) continue;
       this.updateUnitView(u);
     }
+    // Снаряды — двигаем графику в точку из state.
+    for (const p of this.engine.state.projectiles) {
+      const g = this.projectileViews.get(p.id);
+      if (g) {
+        g.x = p.x;
+        g.y = p.y;
+      }
+    }
   }
 
   // ───── обработка событий движка ─────
@@ -200,6 +210,12 @@ export class ArenaScene extends Phaser.Scene {
         break;
       case 'spellCast':
         this.renderSpellEffect(e.code, e.x, e.y);
+        break;
+      case 'projectileSpawned':
+        this.attachProjectileView(e.projectile);
+        break;
+      case 'projectileHit':
+        this.handleProjectileHit(e.projectile);
         break;
       case 'energyChanged':
         if (e.team === 'player') store.setEnergy(e.value);
@@ -892,6 +908,46 @@ export class ArenaScene extends Phaser.Scene {
       duration: 220,
       onComplete: () => line.destroy(),
     });
+  }
+
+  // ───── визуал: снаряды ─────
+
+  private attachProjectileView(p: import('@/battle/types').Projectile) {
+    const g = this.wG();
+    if (p.kind === 'magic') {
+      // Магический шарик — фиолетовый с golden core.
+      g.fillStyle(0xb08fff, 0.85);
+      g.fillCircle(0, 0, 4);
+      g.fillStyle(0xffd267, 1);
+      g.fillCircle(0, 0, 2);
+    } else {
+      // Стрела — желто-коричневая капля.
+      g.fillStyle(0xb89a64, 1);
+      g.fillTriangle(-5, -2, 5, 0, -5, 2);
+      g.fillStyle(0xffffff, 0.6);
+      g.fillCircle(5, 0, 1.4);
+    }
+    g.x = p.x;
+    g.y = p.y;
+    this.projectileViews.set(p.id, g);
+  }
+
+  private handleProjectileHit(p: import('@/battle/types').Projectile) {
+    const g = this.projectileViews.get(p.id);
+    if (!g) return;
+    // Маленькая вспышка попадания.
+    const flash = this.wG();
+    flash.fillStyle(0xffffff, 0.7);
+    flash.fillCircle(p.x, p.y, 7);
+    this.tweens.add({
+      targets: flash,
+      scale: 1.8,
+      alpha: 0,
+      duration: 220,
+      onComplete: () => flash.destroy(),
+    });
+    g.destroy();
+    this.projectileViews.delete(p.id);
   }
 
   // ───── визуал: спеллы ─────

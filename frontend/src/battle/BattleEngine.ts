@@ -41,7 +41,13 @@ import type {
   BattleEvent,
   BattleListener,
   BattleOutcome,
+  Projectile,
 } from './types';
+
+/** При range >= этого порога юнит/башня атакует через projectile. */
+const RANGED_THRESHOLD = 80;
+const PROJECTILE_SPEED = 360; // px/sec
+const PROJECTILE_HIT_RADIUS = 10;
 
 export interface SpawnUnitParams {
   team: Side;
@@ -61,11 +67,13 @@ export class BattleEngine {
 
   private listeners: BattleListener[] = [];
   private nextUnitId = 1;
+  private nextProjectileId = 1;
 
   constructor() {
     this.state = {
       units: [],
       towers: this.buildTowers(),
+      projectiles: [],
       energy: { player: START_ENERGY, enemy: START_ENERGY },
       towersDestroyed: { player: 0, enemy: 0 },
       timeMs: 0,
@@ -100,12 +108,109 @@ export class BattleEngine {
       this.tickUnit(unit, dt);
     }
 
+    this.tickTowers(dt);
+    this.tickProjectiles(dt);
+
     if (this.state.timeMs >= this.state.matchDurationMs) {
       this.handleTimeout();
     } else {
       const left = Math.max(0, this.state.matchDurationMs - this.state.timeMs);
       this.emit({ kind: 'timeTick', timeLeftMs: left });
     }
+  }
+
+  /** Башни сами стреляют проджектайлом по ближайшему вражескому юниту в range. */
+  private tickTowers(_dt: number) {
+    for (const tower of this.state.towers) {
+      if (tower.isDestroyed) continue;
+      const target = this.findTowerTarget(tower);
+      if (!target) continue;
+
+      const cooldownMs = tower.attackSpeed * 1000;
+      if (this.state.timeMs - tower.lastAttackAt < cooldownMs) continue;
+      tower.lastAttackAt = this.state.timeMs;
+
+      this.spawnProjectile({
+        team: tower.team,
+        x: tower.x,
+        y: tower.y,
+        damage: tower.damage,
+        targetUnitId: target.id,
+        fallbackX: target.x,
+        fallbackY: target.y,
+        kind: 'magic',
+      });
+    }
+  }
+
+  private findTowerTarget(tower: Tower): Unit | null {
+    let best: Unit | null = null;
+    let bestDist = Infinity;
+    for (const u of this.state.units) {
+      if (u.isDead || u.team === tower.team) continue;
+      const d = Math.hypot(u.x - tower.x, u.y - tower.y);
+      if (d <= tower.range && d < bestDist) {
+        best = u;
+        bestDist = d;
+      }
+    }
+    return best;
+  }
+
+  private tickProjectiles(dt: number) {
+    if (this.state.projectiles.length === 0) return;
+    const survivors: Projectile[] = [];
+    for (const p of this.state.projectiles) {
+      // Целимся в живую цель, либо в её последнюю точку.
+      let tx = p.fallbackX;
+      let ty = p.fallbackY;
+      if (p.targetUnitId) {
+        const u = this.state.units.find((it) => it.id === p.targetUnitId);
+        if (u && !u.isDead) {
+          tx = u.x;
+          ty = u.y;
+        }
+      } else if (p.targetTowerId) {
+        const t = this.state.towers.find((it) => it.id === p.targetTowerId);
+        if (t && !t.isDestroyed) {
+          tx = t.x;
+          ty = t.y;
+        }
+      }
+
+      const dx = tx - p.x;
+      const dy = ty - p.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= PROJECTILE_HIT_RADIUS) {
+        // Хит: применяем урон к актуальной цели.
+        if (p.targetUnitId) {
+          const u = this.state.units.find((it) => it.id === p.targetUnitId);
+          if (u && !u.isDead) this.damageUnit(u, p.damage);
+        } else if (p.targetTowerId) {
+          const t = this.state.towers.find((it) => it.id === p.targetTowerId);
+          if (t && !t.isDestroyed) this.damageTower(t, p.damage);
+        }
+        this.emit({ kind: 'projectileHit', projectile: p });
+        continue;
+      }
+
+      const step = p.speed * dt;
+      const t = Math.min(1, step / dist);
+      p.x += dx * t;
+      p.y += dy * t;
+      survivors.push(p);
+    }
+    this.state.projectiles = survivors;
+  }
+
+  private spawnProjectile(init: Omit<Projectile, 'id' | 'speed'>) {
+    const proj: Projectile = {
+      id: `p${this.nextProjectileId++}`,
+      speed: PROJECTILE_SPEED,
+      ...init,
+    };
+    this.state.projectiles.push(proj);
+    this.emit({ kind: 'projectileSpawned', projectile: proj });
   }
 
   private tickUnit(unit: Unit, dt: number) {
@@ -155,11 +260,40 @@ export class BattleEngine {
 
   // ───── урон/смерть/энергия ─────
 
-  private applyAttack(_attacker: Unit, victimUnit: Unit | null, victimTower: Tower | null) {
+  private applyAttack(attacker: Unit, victimUnit: Unit | null, victimTower: Tower | null) {
+    const isRanged = attacker.range >= RANGED_THRESHOLD;
+    if (isRanged) {
+      // Дальний юнит — пускает снаряд.
+      if (victimTower) {
+        this.spawnProjectile({
+          team: attacker.team,
+          x: attacker.x,
+          y: attacker.y,
+          damage: attacker.damage,
+          targetTowerId: victimTower.id,
+          fallbackX: victimTower.x,
+          fallbackY: victimTower.y,
+          kind: attacker.type === 'mage' ? 'magic' : 'arrow',
+        });
+      } else if (victimUnit) {
+        this.spawnProjectile({
+          team: attacker.team,
+          x: attacker.x,
+          y: attacker.y,
+          damage: attacker.damage,
+          targetUnitId: victimUnit.id,
+          fallbackX: victimUnit.x,
+          fallbackY: victimUnit.y,
+          kind: attacker.type === 'mage' ? 'magic' : 'arrow',
+        });
+      }
+      return;
+    }
+    // Ближний — мгновенный удар.
     if (victimTower) {
-      this.damageTower(victimTower, _attacker.damage);
+      this.damageTower(victimTower, attacker.damage);
     } else if (victimUnit) {
-      this.damageUnit(victimUnit, _attacker.damage);
+      this.damageUnit(victimUnit, attacker.damage);
     }
   }
 

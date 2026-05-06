@@ -1,5 +1,2 @@
-import SubPage from '@/components/SubPage';
-
-export default function DeckPage() {
-  return <SubPage title="Колода" />;
-}
+import CollectionPage from './CollectionPage';
+export default CollectionPage;
