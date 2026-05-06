@@ -437,18 +437,18 @@ export class ArenaScene extends Phaser.Scene {
   private drawSideLabels() {
     const labelStyle: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '14px',
+      fontSize: '10px',
       color: '#ffffff',
       fontStyle: 'bold',
     };
     this.add
       .text(ARENA_WIDTH / 2, (PLAYER_FIRST_ROW - 0.4) * TILE, 'ИГРОК', labelStyle)
       .setOrigin(0.5, 0)
-      .setAlpha(0.85);
+      .setAlpha(0.55);
     this.add
       .text(ARENA_WIDTH / 2, (RIVER_TOP_ROW - 0.6) * TILE, 'ВРАГ', labelStyle)
       .setOrigin(0.5, 1)
-      .setAlpha(0.85);
+      .setAlpha(0.55);
   }
 
   // ───── визуал: башни ─────
@@ -473,27 +473,35 @@ export class ArenaScene extends Phaser.Scene {
         ? ARENA_COLORS.enemyKingEdge
         : ARENA_COLORS.enemyTowerEdge;
 
+    // Тонкий range-круг (подсказка для отладки логики).
     const rangeCircle = this.add.graphics();
-    rangeCircle.lineStyle(1, isPlayer ? ARENA_COLORS.playerTower : ARENA_COLORS.enemyTower, 0.18);
+    rangeCircle.lineStyle(1, isPlayer ? ARENA_COLORS.playerTower : ARENA_COLORS.enemyTower, 0.1);
     rangeCircle.strokeCircle(tower.x, tower.y, tower.range);
 
+    // Тень под башней — добавляет ощущение глубины.
+    const shadow = this.add.graphics();
+    shadow.fillStyle(0x000000, 0.28);
+    shadow.fillEllipse(tower.x, r.y + r.h - 4, r.w * 0.62, 7);
+
+    // Сам корпус — заметно меньше тайла (≈25-30% от тайл-размера).
+    const pad = isKing ? 20 : 14;
     const body = this.add.graphics();
     body.fillStyle(fill, 1);
     body.lineStyle(2, stroke, 1);
-    body.fillRoundedRect(r.x + 4, r.y + 4, r.w - 8, r.h - 8, 6);
-    body.strokeRoundedRect(r.x + 4, r.y + 4, r.w - 8, r.h - 8, 6);
+    body.fillRoundedRect(r.x + pad, r.y + pad, r.w - pad * 2, r.h - pad * 2, 5);
+    body.strokeRoundedRect(r.x + pad, r.y + pad, r.w - pad * 2, r.h - pad * 2, 5);
 
     if (isKing) {
       const crown = this.add.graphics();
       crown.fillStyle(0xf2c14e, 1);
-      crown.fillCircle(tower.x, tower.y - 2, 6);
+      crown.fillCircle(tower.x, tower.y - 1, 5);
     }
 
     const hpBar = this.add.graphics();
     const hpText = this.add
-      .text(tower.x, r.y - 14, '', {
+      .text(tower.x, r.y + pad - 4, '', {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '11px',
+        fontSize: '9px',
         color: '#ffffff',
         fontStyle: 'bold',
       })
@@ -508,22 +516,22 @@ export class ArenaScene extends Phaser.Scene {
     if (!view) return;
     const r = rectToPx(tower.rect);
     const isPlayer = tower.team === 'player';
-    const barW = r.w - 12;
-    const barH = 4;
-    const barX = r.x + 6;
-    const barY = r.y - 8;
+    const isKing = tower.type === 'king';
+    const pad = isKing ? 20 : 14;
+    const barW = r.w - pad * 2;
+    const barH = 3;
+    const barX = r.x + pad;
+    const barY = r.y + pad - 7;
     const fill = isPlayer ? ARENA_COLORS.playerTower : ARENA_COLORS.enemyTower;
 
     const bar = view.hpBar;
     bar.clear();
     bar.fillStyle(0x000000, 0.45);
-    bar.fillRoundedRect(barX, barY, barW, barH, 2);
+    bar.fillRoundedRect(barX, barY, barW, barH, 1.5);
     bar.fillStyle(fill, 1);
-    bar.fillRoundedRect(barX, barY, Math.max(0, barW * tower.hpRatio), barH, 2);
-    bar.lineStyle(1, 0x000000, 0.5);
-    bar.strokeRoundedRect(barX, barY, barW, barH, 2);
+    bar.fillRoundedRect(barX, barY, Math.max(0, barW * tower.hpRatio), barH, 1.5);
 
-    view.hpText.setText(`${tower.hp} / ${tower.maxHp}`);
+    view.hpText.setText(`${tower.hp}`);
   }
 
   private flashTowerDamage(tower: Tower) {
@@ -571,7 +579,7 @@ export class ArenaScene extends Phaser.Scene {
     const label = this.add
       .text(unit.x, unit.y, typeGlyph(unit.type), {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
+        fontSize: '11px',
         color: '#ffffff',
       })
       .setOrigin(0.5);
@@ -604,9 +612,9 @@ export class ArenaScene extends Phaser.Scene {
     view.label.y = unit.y;
 
     const barW = unit.radius * 2;
-    const barH = 3;
+    const barH = 2;
     const barX = unit.x - unit.radius;
-    const barY = unit.y - unit.radius - 6;
+    const barY = unit.y - unit.radius - 5;
     const fill = unit.team === 'player' ? ARENA_COLORS.playerTower : ARENA_COLORS.enemyTower;
 
     const bar = view.hpBar;

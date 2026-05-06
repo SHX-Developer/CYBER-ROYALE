@@ -72,7 +72,8 @@ export default function BattlePage() {
 
   return (
     <div style={page}>
-      <div ref={containerRef} style={canvasWrap} />
+      <div ref={containerRef} className="arena-tilt" style={canvasWrap} />
+      <div className="arena-fog" />
 
       <button onClick={() => setScreen('menu')} style={backBtn} aria-label="Выйти из боя">
         ←
@@ -191,8 +192,8 @@ function NextCardSlot({ card }: { card: CardDef | undefined }) {
   return (
     <div style={nextSlot}>
       <div style={nextLabel}>NEXT</div>
-      <div style={{ fontSize: 22 }}>{card.icon}</div>
-      <div style={{ fontSize: 10, opacity: 0.7 }}>⚡{card.energyCost}</div>
+      <div style={{ fontSize: 18 }}>{card.icon}</div>
+      <div style={{ fontSize: 9, opacity: 0.7 }}>⚡{card.energyCost}</div>
     </div>
   );
 }
@@ -286,39 +287,39 @@ const canvasWrap: React.CSSProperties = {
 
 const backBtn: React.CSSProperties = {
   position: 'absolute',
-  top: 10,
-  left: 10,
-  width: 40,
-  height: 40,
-  borderRadius: 12,
+  top: 8,
+  left: 8,
+  width: 32,
+  height: 32,
+  borderRadius: 10,
   border: '1px solid rgba(255,255,255,0.15)',
   background: 'rgba(11,13,18,0.65)',
   backdropFilter: 'blur(6px)',
   WebkitBackdropFilter: 'blur(6px)',
   color: '#e7ecf3',
-  fontSize: 20,
+  fontSize: 16,
   cursor: 'pointer',
   zIndex: 10,
 };
 
 const topBar: React.CSSProperties = {
   position: 'absolute',
-  top: 12,
-  left: 60,
-  right: 12,
+  top: 10,
+  left: 48,
+  right: 10,
   display: 'flex',
   justifyContent: 'space-between',
-  gap: 8,
+  gap: 6,
   zIndex: 10,
 };
 
 const badge: React.CSSProperties = {
-  padding: '6px 12px',
+  padding: '4px 9px',
   borderRadius: 999,
   background: 'rgba(11,13,18,0.65)',
   border: '1px solid rgba(255,255,255,0.12)',
   color: '#e7ecf3',
-  fontSize: 13,
+  fontSize: 11,
   fontWeight: 700,
   display: 'inline-flex',
   alignItems: 'center',
@@ -326,20 +327,20 @@ const badge: React.CSSProperties = {
 
 const hudWrap: React.CSSProperties = {
   position: 'absolute',
-  bottom: 'calc(8px + env(safe-area-inset-bottom, 0px))',
+  bottom: 'calc(6px + env(safe-area-inset-bottom, 0px))',
   left: 0,
   right: 0,
-  padding: '0 10px',
+  padding: '0 8px',
   display: 'flex',
   flexDirection: 'column',
-  gap: 8,
+  gap: 6,
   zIndex: 10,
 };
 
 const energyOuter: React.CSSProperties = {
   position: 'relative',
   width: '100%',
-  height: 18,
+  height: 13,
   borderRadius: 999,
   background: 'rgba(11,13,18,0.65)',
   border: '1px solid rgba(255,255,255,0.12)',
@@ -361,7 +362,7 @@ const energyText: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  fontSize: 11,
+  fontSize: 9,
   fontWeight: 700,
   color: '#ffffff',
   letterSpacing: 0.5,
@@ -370,28 +371,28 @@ const energyText: React.CSSProperties = {
 const hand4plusNext: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(4, 1fr) 0.55fr',
-  gap: 6,
+  gap: 5,
 };
 
 const cardBtn: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
-  gap: 2,
-  padding: '8px 4px',
-  borderRadius: 10,
+  gap: 1,
+  padding: '6px 3px 5px',
+  borderRadius: 9,
   border: '1px solid #2a3142',
   color: '#e7ecf3',
   cursor: 'pointer',
 };
 
 const cardIcon: React.CSSProperties = {
-  fontSize: 24,
-  lineHeight: '28px',
+  fontSize: 20,
+  lineHeight: '22px',
 };
 
 const cardName: React.CSSProperties = {
-  fontSize: 11,
+  fontSize: 10,
   fontWeight: 600,
   whiteSpace: 'nowrap',
   overflow: 'hidden',
@@ -400,7 +401,7 @@ const cardName: React.CSSProperties = {
 };
 
 const cardCost: React.CSSProperties = {
-  fontSize: 11,
+  fontSize: 10,
   opacity: 0.85,
 };
 
@@ -410,15 +411,15 @@ const nextSlot: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   gap: 1,
-  padding: '6px 2px',
-  borderRadius: 10,
+  padding: '4px 2px',
+  borderRadius: 9,
   border: '1px dashed #2a3142',
   background: '#0a0d14',
   color: '#9ba1b0',
 };
 
 const nextLabel: React.CSSProperties = {
-  fontSize: 9,
+  fontSize: 8,
   letterSpacing: 1,
   opacity: 0.7,
 };

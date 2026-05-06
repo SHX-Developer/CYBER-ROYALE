@@ -8,12 +8,37 @@
     <style>
       html, body, #root { height: 100%; margin: 0; padding: 0; overscroll-behavior: none; }
       body { background: #0b0d12; color: #e7ecf3; font-family: system-ui, -apple-system, sans-serif; }
-      /* Telegram WebApp кладёт сверху системные кнопки (close/menu)
-         + у iPhone есть dynamic island. Освобождаем 100px минимум
-         и ещё столько, сколько просит env(safe-area-inset-top). */
+      /* Освобождаем компактный отступ под кнопки Telegram WebApp.
+         Базовый 50px — достаточно для close/menu кнопок; на устройствах
+         с челкой/dynamic island добавляется safe-area-inset-top. */
       #root {
-        padding-top: max(100px, calc(env(safe-area-inset-top, 0px) + 70px));
+        padding-top: max(50px, calc(env(safe-area-inset-top, 0px) + 18px));
         box-sizing: border-box;
+      }
+
+      /* Pseudo-3D наклон арены: канвас лежит чуть от игрока — будто стол.
+         Угол небольшой (6°), чтобы не сломать точность тапов. */
+      .arena-tilt {
+        perspective: 1400px;
+        perspective-origin: 50% 75%;
+      }
+      .arena-tilt > canvas {
+        transform: rotateX(6deg);
+        transform-origin: 50% 80%;
+      }
+
+      /* Туман-вуаль на верху арены — даёт ощущение глубины. */
+      .arena-fog {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(
+          180deg,
+          rgba(0, 0, 0, 0.32) 0%,
+          rgba(0, 0, 0, 0.08) 18%,
+          rgba(0, 0, 0, 0) 35%,
+          rgba(0, 0, 0, 0) 100%
+        );
       }
     </style>
   </head>
