@@ -21,6 +21,7 @@ import {
 } from './arena';
 import { Tower } from './tower';
 import { Unit, UNIT_STATS, type UnitType } from './unit';
+import { ENERGY_REGEN_INTERVAL_MS, HAND, useBattleStore } from '@/store/battleStore';
 
 interface TowerView {
   body: Phaser.GameObjects.Graphics;
@@ -38,8 +39,10 @@ type AttackTarget =
   | { kind: 'unit'; ref: Unit }
   | { kind: 'tower'; ref: Tower };
 
-/** Запас восприятия сверх собственного range — в этом радиусе юнит решает, куда идти. */
 const PERCEPTION_BONUS = 80;
+const ENEMY_AUTO_SPAWN_MS = 5000;
+const FIREBALL_RADIUS = 80;
+const FIREBALL_DAMAGE = 250;
 
 export class ArenaScene extends Phaser.Scene {
   towers: Tower[] = [];
@@ -49,11 +52,18 @@ export class ArenaScene extends Phaser.Scene {
   private unitViews = new Map<string, UnitView>();
   private nextUnitId = 1;
 
+  private energyTimer?: Phaser.Time.TimerEvent;
+  private enemyTimer?: Phaser.Time.TimerEvent;
+  private gameOver = false;
+
   constructor() {
     super('Arena');
   }
 
   create() {
+    // Сброс стора боя при входе в сцену.
+    useBattleStore.getState().reset();
+
     this.cameras.main.setBackgroundColor('#0b0d12');
     this.drawZones();
     this.drawLanes();
@@ -62,9 +72,34 @@ export class ArenaScene extends Phaser.Scene {
     this.drawGrid();
     this.drawSideLabels();
     this.spawnTowers();
+
+    // Размещение карты по тапу.
+    this.input.on('pointerdown', this.onPointerDown, this);
+
+    // Регэн энергии.
+    this.energyTimer = this.time.addEvent({
+      delay: ENERGY_REGEN_INTERVAL_MS,
+      loop: true,
+      callback: () => {
+        if (this.gameOver) return;
+        useBattleStore.getState().addEnergy(1);
+      },
+    });
+
+    // Авто-спавн врага каждые 5 секунд.
+    this.enemyTimer = this.time.addEvent({
+      delay: ENEMY_AUTO_SPAWN_MS,
+      loop: true,
+      callback: () => {
+        if (this.gameOver) return;
+        const lane: Lane = Math.random() < 0.5 ? 'left' : 'right';
+        this.spawnUnit('warrior', 'enemy', lane);
+      },
+    });
   }
 
   override update(time: number, deltaMs: number) {
+    if (this.gameOver) return;
     const dt = deltaMs / 1000;
     for (const unit of this.units) {
       if (unit.isDead) continue;
@@ -78,9 +113,12 @@ export class ArenaScene extends Phaser.Scene {
     const target = this.pickTarget(unit);
 
     if (!target) {
-      // Никого не нашли — продолжаем по линии.
-      this.advanceUnitWaypoints(unit, dt);
-      unit.state = 'moving';
+      if (unit.waypointIndex < unit.waypoints.length) {
+        this.advanceUnitWaypoints(unit, dt);
+        unit.state = 'moving';
+      } else {
+        unit.state = 'idle';
+      }
       return;
     }
 
@@ -93,28 +131,23 @@ export class ArenaScene extends Phaser.Scene {
     const attackDist = unit.range + tr;
 
     if (dist <= attackDist) {
-      // В радиусе атаки — стоим, бьём по таймеру.
       unit.state = 'attacking';
       const cooldownMs = unit.attackSpeed * 1000;
       if (time - unit.lastAttackAt >= cooldownMs) {
         this.applyDamage(target, unit.damage);
         unit.lastAttackAt = time;
-        this.flashAttack(unit, { x: tx, y: ty });
+        this.flashAttack({ x: unit.x, y: unit.y }, { x: tx, y: ty });
       }
       this.updateUnitView(unit);
       return;
     }
 
-    // Не в радиусе.
     unit.state = 'moving';
     if (target.kind === 'unit') {
-      // По вражескому юниту идём напрямую.
       this.moveUnitToward(unit, { x: tx, y: ty }, dt);
     } else if (unit.waypointIndex < unit.waypoints.length) {
-      // По башне — пока есть waypoint'ы, идём по линии (через мост).
       this.advanceUnitWaypoints(unit, dt);
     } else {
-      // Линия пройдена, идём напрямую к башне.
       this.moveUnitToward(unit, { x: tx, y: ty }, dt);
     }
   }
@@ -128,7 +161,6 @@ export class ArenaScene extends Phaser.Scene {
   private pickTarget(unit: Unit): AttackTarget | null {
     const perception = unit.range + PERCEPTION_BONUS;
 
-    // 1) ближайший вражеский юнит в perception
     let bestUnit: Unit | null = null;
     let bestUnitDist = Infinity;
     for (const other of this.units) {
@@ -141,10 +173,8 @@ export class ArenaScene extends Phaser.Scene {
     }
     if (bestUnit) return { kind: 'unit', ref: bestUnit };
 
-    // 2) ближайшая живая принцесса
     let bestPrincess: Tower | null = null;
     let bestPrincessDist = Infinity;
-    // 3) король (запасной вариант)
     let king: Tower | null = null;
     let kingDist = Infinity;
 
@@ -218,9 +248,19 @@ export class ArenaScene extends Phaser.Scene {
     this.updateUnitView(unit);
     if (destroyed) {
       const view = this.unitViews.get(unit.id);
-      view?.body.destroy();
-      view?.hpBar.destroy();
-      this.unitViews.delete(unit.id);
+      if (view) {
+        // Плавно гасим тело и потом удаляем графику со сцены.
+        this.tweens.add({
+          targets: [view.body, view.hpBar],
+          alpha: 0,
+          duration: 250,
+          onComplete: () => {
+            view.body.destroy();
+            view.hpBar.destroy();
+            this.unitViews.delete(unit.id);
+          },
+        });
+      }
     }
   }
 
@@ -234,6 +274,70 @@ export class ArenaScene extends Phaser.Scene {
       duration: 220,
       onComplete: () => line.destroy(),
     });
+  }
+
+  // ───── Pointer / placement ─────
+
+  private onPointerDown(pointer: Phaser.Input.Pointer) {
+    if (this.gameOver) return;
+    const store = useBattleStore.getState();
+    const code = store.selectedCard;
+    if (!code) return;
+
+    const card = HAND.find((c) => c.code === code);
+    if (!card) return;
+
+    const x = pointer.worldX;
+    const y = pointer.worldY;
+
+    // Запрещаем ставить карту в зоне врага и на реке.
+    if (y < PLAYER_FIRST_ROW * TILE) {
+      // не наша половина — игнор
+      return;
+    }
+    if (x < 0 || x > ARENA_WIDTH || y > ARENA_HEIGHT) return;
+
+    if (store.energy < card.energyCost) {
+      store.pulseInsufficient();
+      return;
+    }
+    store.spendEnergy(card.energyCost);
+    store.clearSelected();
+
+    if (card.kind === 'spell' && card.code === 'fireball') {
+      this.castFireball(x, y, 'player');
+      return;
+    }
+    if (card.kind === 'unit') {
+      const lane: Lane = x < ARENA_WIDTH / 2 ? 'left' : 'right';
+      this.spawnUnit(card.code as UnitType, 'player', lane);
+    }
+  }
+
+  private castFireball(x: number, y: number, casterTeam: Side) {
+    const gfx = this.add.graphics();
+    gfx.fillStyle(0xff7733, 0.45);
+    gfx.fillCircle(x, y, FIREBALL_RADIUS);
+    gfx.lineStyle(2, 0xffd267, 1);
+    gfx.strokeCircle(x, y, FIREBALL_RADIUS);
+    this.tweens.add({
+      targets: gfx,
+      alpha: 0,
+      duration: 600,
+      onComplete: () => gfx.destroy(),
+    });
+
+    for (const u of this.units) {
+      if (u.isDead || u.team === casterTeam) continue;
+      const d = Math.hypot(u.x - x, u.y - y);
+      if (d <= FIREBALL_RADIUS) this.damageUnit(u, FIREBALL_DAMAGE);
+    }
+    for (const t of this.towers) {
+      if (t.isDestroyed || t.team === casterTeam) continue;
+      const half = towerHalfSize(t);
+      const d = Math.hypot(t.x - x, t.y - y) - half;
+      if (d <= FIREBALL_RADIUS) this.damageTower(t.id, FIREBALL_DAMAGE);
+    }
   }
 
   // ───── Статика арены ─────
@@ -407,19 +511,40 @@ export class ArenaScene extends Phaser.Scene {
     this.updateTowerHud(tower);
     if (destroyed) {
       const view = this.towerViews.get(id);
-      view?.body.setAlpha(0.35);
-      view?.rangeCircle.setAlpha(0);
+      // Анимируем «развалины»: гасим обводку и тело до alpha 0.3, корону прячем.
+      if (view) {
+        this.tweens.add({
+          targets: view.body,
+          alpha: 0.3,
+          duration: 350,
+        });
+        view.rangeCircle.setAlpha(0);
+      }
       view?.hpText.setText('×');
+
+      // Счётчик в сторе.
+      const store = useBattleStore.getState();
+      const side: Side = tower.team;
+      const next = (side === 'player' ? store.towersDestroyed.player : store.towersDestroyed.enemy) + 1;
+      store.setTowersDestroyed(side, next);
+
+      // Король — конец боя.
+      if (tower.type === 'king') {
+        this.endGame(tower.team === 'enemy' ? 'won' : 'lost');
+      }
     }
+  }
+
+  private endGame(result: 'won' | 'lost') {
+    if (this.gameOver) return;
+    this.gameOver = true;
+    useBattleStore.getState().setGameState(result);
+    this.energyTimer?.remove();
+    this.enemyTimer?.remove();
   }
 
   // ───── Юниты ─────
 
-  /**
-   * Спавнит юнита заданного типа за указанную команду на указанной линии.
-   * Точка спавна задаётся жёстко: для player — между своей принцессой
-   * и рекой; для enemy — зеркально.
-   */
   spawnUnit(type: UnitType, team: Side, lane: Lane): Unit {
     const laneCol = LANES[lane].col;
     const x = laneCol * TILE + TILE / 2;
@@ -458,6 +583,16 @@ export class ArenaScene extends Phaser.Scene {
     body.x = unit.x;
     body.y = unit.y;
 
+    // Маленький значок типа в центре круга — чтобы отличать warrior/archer/tank.
+    const label = this.add.text(unit.x, unit.y, typeGlyph(unit.type), {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '13px',
+      color: '#ffffff',
+    });
+    label.setOrigin(0.5);
+    // Закрепим label на body — будем обновлять координаты вместе с body.
+    body.setData('label', label);
+
     const hpBar = this.add.graphics();
     return { body, hpBar };
   }
@@ -467,6 +602,11 @@ export class ArenaScene extends Phaser.Scene {
     if (!view) return;
     view.body.x = unit.x;
     view.body.y = unit.y;
+    const label = view.body.getData('label') as Phaser.GameObjects.Text | undefined;
+    if (label) {
+      label.x = unit.x;
+      label.y = unit.y;
+    }
 
     const barW = unit.radius * 2;
     const barH = 3;
@@ -505,6 +645,17 @@ function towerHalfSize(t: Tower): number {
   return (Math.max(t.rect.w, t.rect.h) * TILE) / 2;
 }
 
+function typeGlyph(type: UnitType): string {
+  switch (type) {
+    case 'warrior':
+      return '⚔';
+    case 'archer':
+      return '🏹';
+    case 'tank':
+      return '🛡';
+  }
+}
+
 export function createGame(parent: HTMLElement): Phaser.Game {
   return new Phaser.Game({
     type: Phaser.AUTO,
@@ -521,6 +672,7 @@ export function createGame(parent: HTMLElement): Phaser.Game {
 }
 
 export type { UnitType } from './unit';
+export type { CardCode } from '@/store/battleStore';
 
 export function getArenaScene(game: Phaser.Game | null): ArenaScene | null {
   if (!game) return null;

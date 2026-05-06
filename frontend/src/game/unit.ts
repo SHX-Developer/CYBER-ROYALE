@@ -5,14 +5,12 @@
  *   range, moveSpeed — пиксели (px и px/sec) — удобно сравнивать с координатами
  *   attackSpeed — секунд между атаками
  *   target = 'ground' | 'air' | 'any' — кого юнит может атаковать
- *
- * Стат-табличка карт (cards.ts) лежит в тайлах — не путать с этой.
  */
 import type { Lane, Side, Vec } from './arena';
 
-export type UnitType = 'warrior';
+export type UnitType = 'warrior' | 'archer' | 'tank';
 export type UnitTarget = 'ground' | 'air' | 'any';
-export type UnitState = 'moving' | 'attacking';
+export type UnitState = 'idle' | 'moving' | 'attacking' | 'dead';
 
 export interface UnitStats {
   maxHp: number;
@@ -21,7 +19,7 @@ export interface UnitStats {
   range: number; // px
   moveSpeed: number; // px/sec
   target: UnitTarget;
-  /** Цвет круга — пока вместо ассетов спрайтов. */
+  /** Радиус круга в визуализации — пока вместо ассетов спрайтов. */
   radius: number;
 }
 
@@ -34,6 +32,24 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     moveSpeed: 60,
     target: 'ground',
     radius: 14,
+  },
+  archer: {
+    maxHp: 250,
+    damage: 60,
+    attackSpeed: 1,
+    range: 200,
+    moveSpeed: 60,
+    target: 'any',
+    radius: 12,
+  },
+  tank: {
+    maxHp: 1500,
+    damage: 100,
+    attackSpeed: 1.5,
+    range: 40,
+    moveSpeed: 30,
+    target: 'ground',
+    radius: 18,
   },
 };
 
@@ -67,7 +83,7 @@ export class Unit {
   readonly radius: number;
 
   isDead = false;
-  state: UnitState = 'moving';
+  state: UnitState = 'idle';
   /** Время последней атаки в мс scene-time; -∞ → первый удар сразу при сближении. */
   lastAttackAt = Number.NEGATIVE_INFINITY;
 
@@ -101,6 +117,7 @@ export class Unit {
     this.hp = Math.max(0, this.hp - amount);
     if (this.hp === 0) {
       this.isDead = true;
+      this.state = 'dead';
       return true;
     }
     return false;
