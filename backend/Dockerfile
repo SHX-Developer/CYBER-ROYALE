@@ -32,4 +32,4 @@ RUN chmod +x ./docker-entrypoint.sh
 EXPOSE 3000
 
 ENTRYPOINT ["dumb-init", "./docker-entrypoint.sh"]
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]
