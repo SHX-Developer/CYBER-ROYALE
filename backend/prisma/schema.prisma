@@ -1,0 +1,98 @@
+// CYBER ROYALE — стартовая схема БД.
+// Минимальный набор моделей под MVP. Расширим на следующих этапах.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String   @id @default(cuid())
+  telegramId String   @unique
+  username   String?
+  firstName  String?
+  photoUrl   String?
+  level      Int      @default(1)
+  coins      Int      @default(0)
+  gems       Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  decks   Deck[]
+  battles Battle[]
+}
+
+enum CardType {
+  UNIT
+  SPELL
+}
+
+model Card {
+  id          String   @id @default(cuid())
+  code        String   @unique // стабильный идентификатор для движка ("warrior", "fireball")
+  name        String
+  type        CardType
+  energyCost  Int
+  // юнит-специфичные статы (null для большинства spell-ов)
+  hp          Int?
+  damage      Int?
+  attackSpeed Float? // ударов в секунду
+  range       Float? // в клетках арены
+  moveSpeed   Float? // клеток в секунду
+  description String?
+  icon        String // emoji или путь к ассету
+  createdAt   DateTime @default(now())
+
+  decks DeckCard[]
+}
+
+model Deck {
+  id        String   @id @default(cuid())
+  name      String
+  userId    String
+  createdAt DateTime @default(now())
+
+  user    User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cards   DeckCard[]
+  battles Battle[]
+}
+
+model DeckCard {
+  deckId String
+  cardId String
+  slot   Int
+
+  deck Deck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  card Card @relation(fields: [cardId], references: [id])
+
+  @@id([deckId, cardId])
+}
+
+enum BattleMode {
+  BOT
+  ONLINE
+}
+
+enum BattleStatus {
+  IN_PROGRESS
+  WIN
+  LOSS
+  DRAW
+}
+
+model Battle {
+  id        String       @id @default(cuid())
+  mode      BattleMode
+  status    BattleStatus @default(IN_PROGRESS)
+  userId    String
+  deckId    String
+  startedAt DateTime     @default(now())
+  endedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deck Deck @relation(fields: [deckId], references: [id])
+}
