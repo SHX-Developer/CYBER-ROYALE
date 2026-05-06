@@ -8,10 +8,11 @@
     <style>
       html, body, #root { height: 100%; margin: 0; padding: 0; overscroll-behavior: none; }
       body { background: #0b0d12; color: #e7ecf3; font-family: system-ui, -apple-system, sans-serif; }
-      /* Telegram WebApp кладёт сверху системные кнопки (close/menu).
-         Освобождаем под них 60px для всего корня приложения. */
+      /* Telegram WebApp кладёт сверху системные кнопки (close/menu)
+         + у iPhone есть dynamic island. Освобождаем 100px минимум
+         и ещё столько, сколько просит env(safe-area-inset-top). */
       #root {
-        padding-top: 60px;
+        padding-top: max(100px, calc(env(safe-area-inset-top, 0px) + 70px));
         box-sizing: border-box;
       }
     </style>
