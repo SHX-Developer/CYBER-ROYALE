@@ -21,7 +21,13 @@ import {
 } from './arena';
 import { Tower } from './tower';
 import { Unit, UNIT_STATS, type UnitType } from './unit';
-import { ENERGY_REGEN_INTERVAL_MS, HAND, useBattleStore } from '@/store/battleStore';
+import { SPELL_STATS, type SpellCode } from './spells';
+import {
+  CARDS,
+  ENERGY_REGEN_INTERVAL_MS,
+  useBattleStore,
+  type CardCode,
+} from '@/store/battleStore';
 
 interface TowerView {
   body: Phaser.GameObjects.Graphics;
@@ -41,8 +47,6 @@ type AttackTarget =
 
 const PERCEPTION_BONUS = 80;
 const ENEMY_AUTO_SPAWN_MS = 5000;
-const FIREBALL_RADIUS = 80;
-const FIREBALL_DAMAGE = 250;
 
 export class ArenaScene extends Phaser.Scene {
   towers: Tower[] = [];
@@ -56,12 +60,15 @@ export class ArenaScene extends Phaser.Scene {
   private enemyTimer?: Phaser.Time.TimerEvent;
   private gameOver = false;
 
+  private zoneGfx?: Phaser.GameObjects.Graphics;
+  private zoneUnsub?: () => void;
+  private lastSelected: CardCode | null = null;
+
   constructor() {
     super('Arena');
   }
 
   create() {
-    // Сброс стора боя при входе в сцену.
     useBattleStore.getState().reset();
 
     this.cameras.main.setBackgroundColor('#0b0d12');
@@ -73,10 +80,20 @@ export class ArenaScene extends Phaser.Scene {
     this.drawSideLabels();
     this.spawnTowers();
 
-    // Размещение карты по тапу.
+    // Слой подсветки зоны размещения. Поверх арены, под HUD'ом юнитов.
+    this.zoneGfx = this.add.graphics();
+    this.zoneGfx.setDepth(50);
+
     this.input.on('pointerdown', this.onPointerDown, this);
 
-    // Регэн энергии.
+    // Реакция на смену выбранной карты.
+    this.zoneUnsub = useBattleStore.subscribe((state) => {
+      if (state.selectedCard !== this.lastSelected) {
+        this.lastSelected = state.selectedCard;
+        this.updateZoneOverlay(state.selectedCard);
+      }
+    });
+
     this.energyTimer = this.time.addEvent({
       delay: ENERGY_REGEN_INTERVAL_MS,
       loop: true,
@@ -86,7 +103,6 @@ export class ArenaScene extends Phaser.Scene {
       },
     });
 
-    // Авто-спавн врага каждые 5 секунд.
     this.enemyTimer = this.time.addEvent({
       delay: ENEMY_AUTO_SPAWN_MS,
       loop: true,
@@ -95,6 +111,10 @@ export class ArenaScene extends Phaser.Scene {
         const lane: Lane = Math.random() < 0.5 ? 'left' : 'right';
         this.spawnUnit('warrior', 'enemy', lane);
       },
+    });
+
+    this.events.once('shutdown', () => {
+      this.zoneUnsub?.();
     });
   }
 
@@ -152,12 +172,6 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
-  /**
-   * Выбор цели по приоритету:
-   *   1) ближайший вражеский юнит в perception-радиусе
-   *   2) ближайшая живая принцесса
-   *   3) король
-   */
   private pickTarget(unit: Unit): AttackTarget | null {
     const perception = unit.range + PERCEPTION_BONUS;
 
@@ -249,7 +263,6 @@ export class ArenaScene extends Phaser.Scene {
     if (destroyed) {
       const view = this.unitViews.get(unit.id);
       if (view) {
-        // Плавно гасим тело и потом удаляем графику со сцены.
         this.tweens.add({
           targets: [view.body, view.hpBar],
           alpha: 0,
@@ -284,42 +297,100 @@ export class ArenaScene extends Phaser.Scene {
     const code = store.selectedCard;
     if (!code) return;
 
-    const card = HAND.find((c) => c.code === code);
-    if (!card) return;
-
+    const card = CARDS[code];
     const x = pointer.worldX;
     const y = pointer.worldY;
 
-    // Запрещаем ставить карту в зоне врага и на реке.
-    if (y < PLAYER_FIRST_ROW * TILE) {
-      // не наша половина — игнор
+    if (!this.isValidPlacement(code, x, y)) {
+      store.pulseInsufficient();
       return;
     }
-    if (x < 0 || x > ARENA_WIDTH || y > ARENA_HEIGHT) return;
 
     if (store.energy < card.energyCost) {
       store.pulseInsufficient();
       return;
     }
-    store.spendEnergy(card.energyCost);
-    store.clearSelected();
 
-    if (card.kind === 'spell' && card.code === 'fireball') {
-      this.castFireball(x, y, 'player');
+    store.spendEnergy(card.energyCost);
+    store.cycleCard(code);
+
+    if (card.kind === 'spell') {
+      this.castSpell(code as SpellCode, x, y, 'player');
       return;
     }
     if (card.kind === 'unit') {
       const lane: Lane = x < ARENA_WIDTH / 2 ? 'left' : 'right';
-      this.spawnUnit(card.code as UnitType, 'player', lane);
+      this.spawnUnit(code as UnitType, 'player', lane);
     }
   }
 
-  private castFireball(x: number, y: number, casterTeam: Side) {
+  /**
+   * Юнит — только своя половина и не на свои башни.
+   * Заклинание — везде в пределах арены.
+   */
+  private isValidPlacement(code: CardCode, x: number, y: number): boolean {
+    if (x < 0 || x > ARENA_WIDTH || y < 0 || y > ARENA_HEIGHT) return false;
+    const card = CARDS[code];
+    if (card.kind === 'spell') return true;
+    if (y < PLAYER_FIRST_ROW * TILE) return false;
+    for (const t of this.towers) {
+      if (t.team !== 'player') continue;
+      const r = rectToPx(t.rect);
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return false;
+    }
+    return true;
+  }
+
+  private updateZoneOverlay(code: CardCode | null) {
+    if (!this.zoneGfx) return;
+    this.zoneGfx.clear();
+    if (!code) return;
+    const card = CARDS[code];
+
+    if (card.kind === 'unit') {
+      // Зелёный прямоугольник на нашей половине.
+      this.zoneGfx.fillStyle(0x88ffaa, 0.12);
+      this.zoneGfx.fillRect(
+        0,
+        PLAYER_FIRST_ROW * TILE,
+        ARENA_WIDTH,
+        ARENA_HEIGHT - PLAYER_FIRST_ROW * TILE,
+      );
+      // Свои башни помечаем no-go красным.
+      this.zoneGfx.fillStyle(0xff5566, 0.25);
+      for (const t of this.towers) {
+        if (t.team !== 'player') continue;
+        const r = rectToPx(t.rect);
+        this.zoneGfx.fillRect(r.x, r.y, r.w, r.h);
+      }
+      // Тонкая обводка границы зоны размещения.
+      this.zoneGfx.lineStyle(2, 0x88ffaa, 0.5);
+      this.zoneGfx.strokeRect(
+        1,
+        PLAYER_FIRST_ROW * TILE + 1,
+        ARENA_WIDTH - 2,
+        ARENA_HEIGHT - PLAYER_FIRST_ROW * TILE - 2,
+      );
+    } else {
+      // Spell — вся арена жёлтым.
+      this.zoneGfx.fillStyle(0xffaa55, 0.1);
+      this.zoneGfx.fillRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
+      this.zoneGfx.lineStyle(2, 0xffaa55, 0.5);
+      this.zoneGfx.strokeRect(1, 1, ARENA_WIDTH - 2, ARENA_HEIGHT - 2);
+    }
+  }
+
+  // ───── Заклинания ─────
+
+  private castSpell(code: SpellCode, x: number, y: number, casterTeam: Side) {
+    const stats = SPELL_STATS[code];
+
+    // Визуал.
     const gfx = this.add.graphics();
-    gfx.fillStyle(0xff7733, 0.45);
-    gfx.fillCircle(x, y, FIREBALL_RADIUS);
+    gfx.fillStyle(stats.color, 0.45);
+    gfx.fillCircle(x, y, stats.radius);
     gfx.lineStyle(2, 0xffd267, 1);
-    gfx.strokeCircle(x, y, FIREBALL_RADIUS);
+    gfx.strokeCircle(x, y, stats.radius);
     this.tweens.add({
       targets: gfx,
       alpha: 0,
@@ -327,16 +398,32 @@ export class ArenaScene extends Phaser.Scene {
       onComplete: () => gfx.destroy(),
     });
 
-    for (const u of this.units) {
-      if (u.isDead || u.team === casterTeam) continue;
-      const d = Math.hypot(u.x - x, u.y - y);
-      if (d <= FIREBALL_RADIUS) this.damageUnit(u, FIREBALL_DAMAGE);
-    }
-    for (const t of this.towers) {
-      if (t.isDestroyed || t.team === casterTeam) continue;
-      const half = towerHalfSize(t);
-      const d = Math.hypot(t.x - x, t.y - y) - half;
-      if (d <= FIREBALL_RADIUS) this.damageTower(t.id, FIREBALL_DAMAGE);
+    // Действие.
+    if (stats.hostile) {
+      // Урон врагам.
+      for (const u of this.units) {
+        if (u.isDead || u.team === casterTeam) continue;
+        const d = Math.hypot(u.x - x, u.y - y);
+        if (d <= stats.radius) this.damageUnit(u, stats.unitImpact);
+      }
+      if (stats.towerImpact > 0) {
+        for (const t of this.towers) {
+          if (t.isDestroyed || t.team === casterTeam) continue;
+          const half = towerHalfSize(t);
+          const d = Math.hypot(t.x - x, t.y - y) - half;
+          if (d <= stats.radius) this.damageTower(t.id, stats.towerImpact);
+        }
+      }
+    } else {
+      // Лечение союзников.
+      for (const u of this.units) {
+        if (u.isDead || u.team !== casterTeam) continue;
+        const d = Math.hypot(u.x - x, u.y - y);
+        if (d <= stats.radius) {
+          u.heal(stats.unitImpact);
+          this.updateUnitView(u);
+        }
+      }
     }
   }
 
@@ -511,7 +598,6 @@ export class ArenaScene extends Phaser.Scene {
     this.updateTowerHud(tower);
     if (destroyed) {
       const view = this.towerViews.get(id);
-      // Анимируем «развалины»: гасим обводку и тело до alpha 0.3, корону прячем.
       if (view) {
         this.tweens.add({
           targets: view.body,
@@ -519,16 +605,15 @@ export class ArenaScene extends Phaser.Scene {
           duration: 350,
         });
         view.rangeCircle.setAlpha(0);
+        view.hpText.setText('×');
       }
-      view?.hpText.setText('×');
 
-      // Счётчик в сторе.
       const store = useBattleStore.getState();
       const side: Side = tower.team;
-      const next = (side === 'player' ? store.towersDestroyed.player : store.towersDestroyed.enemy) + 1;
+      const next =
+        (side === 'player' ? store.towersDestroyed.player : store.towersDestroyed.enemy) + 1;
       store.setTowersDestroyed(side, next);
 
-      // Король — конец боя.
       if (tower.type === 'king') {
         this.endGame(tower.team === 'enemy' ? 'won' : 'lost');
       }
@@ -583,14 +668,12 @@ export class ArenaScene extends Phaser.Scene {
     body.x = unit.x;
     body.y = unit.y;
 
-    // Маленький значок типа в центре круга — чтобы отличать warrior/archer/tank.
     const label = this.add.text(unit.x, unit.y, typeGlyph(unit.type), {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '13px',
       color: '#ffffff',
     });
     label.setOrigin(0.5);
-    // Закрепим label на body — будем обновлять координаты вместе с body.
     body.setData('label', label);
 
     const hpBar = this.add.graphics();
@@ -653,6 +736,12 @@ function typeGlyph(type: UnitType): string {
       return '🏹';
     case 'tank':
       return '🛡';
+    case 'assassin':
+      return '🗡';
+    case 'squad':
+      return '👥';
+    case 'mage':
+      return '🪄';
   }
 }
 

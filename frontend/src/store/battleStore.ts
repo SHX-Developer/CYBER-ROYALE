@@ -1,8 +1,16 @@
 import { create } from 'zustand';
 
-export type CardCode = 'warrior' | 'archer' | 'tank' | 'fireball';
+export type CardCode =
+  | 'warrior'
+  | 'archer'
+  | 'tank'
+  | 'assassin'
+  | 'squad'
+  | 'mage'
+  | 'fireball'
+  | 'heal';
 
-export interface CardSlot {
+export interface CardDef {
   code: CardCode;
   name: string;
   energyCost: number;
@@ -11,13 +19,31 @@ export interface CardSlot {
   kind: 'unit' | 'spell';
 }
 
-export const HAND: CardSlot[] = [
-  { code: 'warrior', name: 'Воин', energyCost: 3, icon: '⚔️', kind: 'unit' },
-  { code: 'archer', name: 'Стрелок', energyCost: 3, icon: '🏹', kind: 'unit' },
-  { code: 'tank', name: 'Танк', energyCost: 5, icon: '🛡️', kind: 'unit' },
-  { code: 'fireball', name: 'Огненный удар', energyCost: 4, icon: '🔥', kind: 'spell' },
+/** Полный каталог карт MVP. Соответствует backend `cards.ts`/seed. */
+export const CARDS: Record<CardCode, CardDef> = {
+  warrior: { code: 'warrior', name: 'Воин', energyCost: 3, icon: '⚔️', kind: 'unit' },
+  archer: { code: 'archer', name: 'Стрелок', energyCost: 3, icon: '🏹', kind: 'unit' },
+  tank: { code: 'tank', name: 'Танк', energyCost: 5, icon: '🛡️', kind: 'unit' },
+  assassin: { code: 'assassin', name: 'Убийца', energyCost: 2, icon: '🗡️', kind: 'unit' },
+  squad: { code: 'squad', name: 'Отряд', energyCost: 3, icon: '👥', kind: 'unit' },
+  mage: { code: 'mage', name: 'Маг', energyCost: 4, icon: '🪄', kind: 'unit' },
+  fireball: { code: 'fireball', name: 'Огненный удар', energyCost: 4, icon: '🔥', kind: 'spell' },
+  heal: { code: 'heal', name: 'Лечение', energyCost: 2, icon: '✨', kind: 'spell' },
+};
+
+/** Стартовая колода игрока — 8 карт, как в Clash Royale. */
+export const STARTER_DECK: CardCode[] = [
+  'warrior',
+  'archer',
+  'tank',
+  'fireball',
+  'mage',
+  'assassin',
+  'squad',
+  'heal',
 ];
 
+export const HAND_SIZE = 4;
 export const MAX_ENERGY = 10;
 export const START_ENERGY = 5;
 export const ENERGY_REGEN_INTERVAL_MS = 2800;
@@ -25,11 +51,13 @@ export const ENERGY_REGEN_INTERVAL_MS = 2800;
 export type GameState = 'playing' | 'won' | 'lost';
 
 interface BattleState {
+  /** Колода длиной 8: первые HAND_SIZE — рука, deck[HAND_SIZE] — следующая. */
+  deck: CardCode[];
   selectedCard: CardCode | null;
   energy: number;
   towersDestroyed: { player: number; enemy: number };
   gameState: GameState;
-  /** Импульс «не хватает энергии» — UI на это мигает. */
+  /** Импульс «не хватает энергии / нельзя сюда» — UI на это мигает. */
   insufficientPulse: number;
 
   selectCard: (code: CardCode) => void;
@@ -37,6 +65,8 @@ interface BattleState {
   setEnergy: (v: number) => void;
   addEnergy: (delta: number) => void;
   spendEnergy: (cost: number) => boolean;
+  /** После применения карта уходит в конец очереди. */
+  cycleCard: (code: CardCode) => void;
   pulseInsufficient: () => void;
   setTowersDestroyed: (side: 'player' | 'enemy', count: number) => void;
   setGameState: (s: GameState) => void;
@@ -44,6 +74,7 @@ interface BattleState {
 }
 
 export const useBattleStore = create<BattleState>((set, get) => ({
+  deck: [...STARTER_DECK],
   selectedCard: null,
   energy: START_ENERGY,
   towersDestroyed: { player: 0, enemy: 0 },
@@ -66,6 +97,18 @@ export const useBattleStore = create<BattleState>((set, get) => ({
     set({ energy: energy - cost });
     return true;
   },
+
+  cycleCard: (code) =>
+    set((s) => {
+      const i = s.deck.indexOf(code);
+      if (i < 0 || i >= HAND_SIZE) return s;
+      const used = s.deck[i];
+      const newDeck = [...s.deck];
+      newDeck.splice(i, 1);
+      newDeck.push(used);
+      return { deck: newDeck, selectedCard: null };
+    }),
+
   pulseInsufficient: () => set((s) => ({ insufficientPulse: s.insufficientPulse + 1 })),
 
   setTowersDestroyed: (side, count) =>
@@ -74,6 +117,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
 
   reset: () =>
     set({
+      deck: [...STARTER_DECK],
       selectedCard: null,
       energy: START_ENERGY,
       towersDestroyed: { player: 0, enemy: 0 },

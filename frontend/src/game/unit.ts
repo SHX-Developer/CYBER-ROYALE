@@ -8,7 +8,7 @@
  */
 import type { Lane, Side, Vec } from './arena';
 
-export type UnitType = 'warrior' | 'archer' | 'tank';
+export type UnitType = 'warrior' | 'archer' | 'tank' | 'assassin' | 'squad' | 'mage';
 export type UnitTarget = 'ground' | 'air' | 'any';
 export type UnitState = 'idle' | 'moving' | 'attacking' | 'dead';
 
@@ -50,6 +50,35 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     moveSpeed: 30,
     target: 'ground',
     radius: 18,
+  },
+  assassin: {
+    maxHp: 200,
+    damage: 90,
+    attackSpeed: 0.8,
+    range: 40,
+    moveSpeed: 108, // быстрый: ~1.8 tiles/sec * 60
+    target: 'ground',
+    radius: 12,
+  },
+  squad: {
+    // На MVP — один объединённый юнит. Когда появится механика отрядов,
+    // карта будет спавнить 4 мини-юнита с этими полями.
+    maxHp: 600,
+    damage: 60,
+    attackSpeed: 1.1,
+    range: 40,
+    moveSpeed: 72,
+    target: 'ground',
+    radius: 14,
+  },
+  mage: {
+    maxHp: 350,
+    damage: 120,
+    attackSpeed: 1.4,
+    range: 160,
+    moveSpeed: 54,
+    target: 'any',
+    radius: 14,
   },
 };
 
@@ -121,6 +150,11 @@ export class Unit {
       return true;
     }
     return false;
+  }
+
+  heal(amount: number) {
+    if (this.isDead) return;
+    this.hp = Math.min(this.maxHp, this.hp + amount);
   }
 
   get hpRatio(): number {

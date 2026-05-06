@@ -2,7 +2,13 @@ import { useEffect, useRef } from 'react';
 import type Phaser from 'phaser';
 import { createGame } from '@/game/PhaserGame';
 import { useUiStore } from '@/store/uiStore';
-import { HAND, MAX_ENERGY, useBattleStore, type CardSlot } from '@/store/battleStore';
+import {
+  CARDS,
+  HAND_SIZE,
+  MAX_ENERGY,
+  useBattleStore,
+  type CardDef,
+} from '@/store/battleStore';
 
 export default function BattlePage() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -19,7 +25,6 @@ export default function BattlePage() {
     return () => {
       gameRef.current?.destroy(true);
       gameRef.current = null;
-      // Сбрасываем стор боя при выходе.
       useBattleStore.getState().reset();
     };
   }, []);
@@ -66,22 +71,29 @@ function EnergyBar() {
           width: `${(energy / MAX_ENERGY) * 100}%`,
         }}
       />
-      <div style={energyText}>⚡ {Math.floor(energy)} / {MAX_ENERGY}</div>
+      <div style={energyText}>
+        ⚡ {Math.floor(energy)} / {MAX_ENERGY}
+      </div>
     </div>
   );
 }
 
 function HandPanel() {
+  const deck = useBattleStore((s) => s.deck);
+  const hand = deck.slice(0, HAND_SIZE);
+  const next = deck[HAND_SIZE];
+
   return (
-    <div style={hand}>
-      {HAND.map((card) => (
-        <CardSlotButton key={card.code} card={card} />
+    <div style={hand4plusNext}>
+      {hand.map((code) => (
+        <CardSlotButton key={code} card={CARDS[code]} />
       ))}
+      <NextCardSlot card={CARDS[next]} />
     </div>
   );
 }
 
-function CardSlotButton({ card }: { card: CardSlot }) {
+function CardSlotButton({ card }: { card: CardDef }) {
   const selected = useBattleStore((s) => s.selectedCard);
   const energy = useBattleStore((s) => s.energy);
   const select = useBattleStore((s) => s.selectCard);
@@ -100,12 +112,13 @@ function CardSlotButton({ card }: { card: CardSlot }) {
     else select(card.code);
   };
 
+  const isSpell = card.kind === 'spell';
   return (
     <button
       onClick={onClick}
       style={{
         ...cardBtn,
-        outline: isSelected ? '2px solid #ffd267' : 'none',
+        outline: isSelected ? `2px solid ${isSpell ? '#b08fff' : '#ffd267'}` : 'none',
         opacity: canAfford ? 1 : 0.5,
         background: isSelected
           ? 'linear-gradient(180deg, #2a3142 0%, #181d2a 100%)'
@@ -116,6 +129,17 @@ function CardSlotButton({ card }: { card: CardSlot }) {
       <div style={cardName}>{card.name}</div>
       <div style={cardCost}>⚡ {card.energyCost}</div>
     </button>
+  );
+}
+
+function NextCardSlot({ card }: { card: CardDef | undefined }) {
+  if (!card) return <div style={nextSlot} />;
+  return (
+    <div style={nextSlot}>
+      <div style={nextLabel}>NEXT</div>
+      <div style={{ fontSize: 22 }}>{card.icon}</div>
+      <div style={{ fontSize: 10, opacity: 0.7 }}>⚡{card.energyCost}</div>
+    </div>
   );
 }
 
@@ -231,9 +255,10 @@ const energyText: React.CSSProperties = {
   letterSpacing: 0.5,
 };
 
-const hand: React.CSSProperties = {
+// 4 карты руки + 1 узкий слот «next» справа.
+const hand4plusNext: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(4, 1fr)',
+  gridTemplateColumns: 'repeat(4, 1fr) 0.55fr',
   gap: 6,
 };
 
@@ -266,6 +291,25 @@ const cardName: React.CSSProperties = {
 const cardCost: React.CSSProperties = {
   fontSize: 11,
   opacity: 0.85,
+};
+
+const nextSlot: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 1,
+  padding: '6px 2px',
+  borderRadius: 10,
+  border: '1px dashed #2a3142',
+  background: '#0a0d14',
+  color: '#9ba1b0',
+};
+
+const nextLabel: React.CSSProperties = {
+  fontSize: 9,
+  letterSpacing: 1,
+  opacity: 0.7,
 };
 
 const overlay: React.CSSProperties = {
