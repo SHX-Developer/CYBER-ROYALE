@@ -12,6 +12,9 @@ services:
       RUN_SEED: ${RUN_SEED:-1}
     expose:
       - "3000"
+    networks:
+      - default
+      - dokploy-network
 
   frontend:
     build:
@@ -23,3 +26,7 @@ services:
       - backend
     expose:
       - "80"
+
+networks:
+  dokploy-network:
+    external: true
