@@ -16,7 +16,7 @@
     "prisma:seed": "prisma db seed"
   },
   "prisma": {
-    "seed": "ts-node --transpile-only prisma/seed.ts"
+    "seed": "ts-node --project tsconfig.seed.json --transpile-only prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.6",
