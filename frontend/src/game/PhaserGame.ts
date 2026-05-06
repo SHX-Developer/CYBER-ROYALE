@@ -6,6 +6,7 @@ import {
   BRIDGES,
   COLS,
   LANE_PATHS,
+  LANE_PATHS_PX,
   LANES,
   PLAYER_FIRST_ROW,
   RIVER_BOTTOM_ROW,
@@ -16,6 +17,7 @@ import {
   rectToPx,
   type Lane,
   type Side,
+  type Vec,
 } from './arena';
 import { Tower } from './tower';
 import { Unit, UNIT_STATS, type UnitType } from './unit';
@@ -31,6 +33,13 @@ interface UnitView {
   body: Phaser.GameObjects.Graphics;
   hpBar: Phaser.GameObjects.Graphics;
 }
+
+type AttackTarget =
+  | { kind: 'unit'; ref: Unit }
+  | { kind: 'tower'; ref: Tower };
+
+/** Запас восприятия сверх собственного range — в этом радиусе юнит решает, куда идти. */
+const PERCEPTION_BONUS = 80;
 
 export class ArenaScene extends Phaser.Scene {
   towers: Tower[] = [];
@@ -55,23 +64,176 @@ export class ArenaScene extends Phaser.Scene {
     this.spawnTowers();
   }
 
-  override update(_time: number, deltaMs: number) {
+  override update(time: number, deltaMs: number) {
     const dt = deltaMs / 1000;
     for (const unit of this.units) {
       if (unit.isDead) continue;
-      // Игроки идут вверх (y уменьшается), враги — вниз (y растёт).
-      const dir = unit.team === 'player' ? -1 : 1;
-      unit.y += dir * unit.moveSpeed * dt;
-
-      // Граничные стопы — пока не доходим до атакующей логики.
-      // Игрок останавливается у вражеского короля, враг — у игрока.
-      const minY = TILE * 1.5;
-      const maxY = ARENA_HEIGHT - TILE * 1.5;
-      if (unit.y < minY) unit.y = minY;
-      if (unit.y > maxY) unit.y = maxY;
-
-      this.updateUnitView(unit);
+      this.tickUnit(unit, time, dt);
     }
+  }
+
+  // ───── Цикл боя одного юнита ─────
+
+  private tickUnit(unit: Unit, time: number, dt: number) {
+    const target = this.pickTarget(unit);
+
+    if (!target) {
+      // Никого не нашли — продолжаем по линии.
+      this.advanceUnitWaypoints(unit, dt);
+      unit.state = 'moving';
+      return;
+    }
+
+    const tx = targetX(target);
+    const ty = targetY(target);
+    const tr = targetRadius(target);
+    const dx = tx - unit.x;
+    const dy = ty - unit.y;
+    const dist = Math.hypot(dx, dy);
+    const attackDist = unit.range + tr;
+
+    if (dist <= attackDist) {
+      // В радиусе атаки — стоим, бьём по таймеру.
+      unit.state = 'attacking';
+      const cooldownMs = unit.attackSpeed * 1000;
+      if (time - unit.lastAttackAt >= cooldownMs) {
+        this.applyDamage(target, unit.damage);
+        unit.lastAttackAt = time;
+        this.flashAttack(unit, { x: tx, y: ty });
+      }
+      this.updateUnitView(unit);
+      return;
+    }
+
+    // Не в радиусе.
+    unit.state = 'moving';
+    if (target.kind === 'unit') {
+      // По вражескому юниту идём напрямую.
+      this.moveUnitToward(unit, { x: tx, y: ty }, dt);
+    } else if (unit.waypointIndex < unit.waypoints.length) {
+      // По башне — пока есть waypoint'ы, идём по линии (через мост).
+      this.advanceUnitWaypoints(unit, dt);
+    } else {
+      // Линия пройдена, идём напрямую к башне.
+      this.moveUnitToward(unit, { x: tx, y: ty }, dt);
+    }
+  }
+
+  /**
+   * Выбор цели по приоритету:
+   *   1) ближайший вражеский юнит в perception-радиусе
+   *   2) ближайшая живая принцесса
+   *   3) король
+   */
+  private pickTarget(unit: Unit): AttackTarget | null {
+    const perception = unit.range + PERCEPTION_BONUS;
+
+    // 1) ближайший вражеский юнит в perception
+    let bestUnit: Unit | null = null;
+    let bestUnitDist = Infinity;
+    for (const other of this.units) {
+      if (other.team === unit.team || other.isDead) continue;
+      const d = Math.hypot(unit.x - other.x, unit.y - other.y) - other.radius;
+      if (d <= perception && d < bestUnitDist) {
+        bestUnit = other;
+        bestUnitDist = d;
+      }
+    }
+    if (bestUnit) return { kind: 'unit', ref: bestUnit };
+
+    // 2) ближайшая живая принцесса
+    let bestPrincess: Tower | null = null;
+    let bestPrincessDist = Infinity;
+    // 3) король (запасной вариант)
+    let king: Tower | null = null;
+    let kingDist = Infinity;
+
+    for (const t of this.towers) {
+      if (t.team === unit.team || t.isDestroyed) continue;
+      const half = towerHalfSize(t);
+      const d = Math.hypot(unit.x - t.x, unit.y - t.y) - half;
+      if (t.type === 'princess' && d < bestPrincessDist) {
+        bestPrincess = t;
+        bestPrincessDist = d;
+      }
+      if (t.type === 'king' && d < kingDist) {
+        king = t;
+        kingDist = d;
+      }
+    }
+
+    if (bestPrincess) return { kind: 'tower', ref: bestPrincess };
+    if (king) return { kind: 'tower', ref: king };
+    return null;
+  }
+
+  private moveUnitToward(unit: Unit, point: Vec, dt: number) {
+    const dx = point.x - unit.x;
+    const dy = point.y - unit.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1) return;
+    const step = unit.moveSpeed * dt;
+    const t = Math.min(1, step / dist);
+    unit.x += dx * t;
+    unit.y += dy * t;
+    this.updateUnitView(unit);
+  }
+
+  private advanceUnitWaypoints(unit: Unit, dt: number) {
+    let budget = unit.moveSpeed * dt;
+    while (budget > 0 && unit.waypointIndex < unit.waypoints.length) {
+      const wp = unit.waypoints[unit.waypointIndex];
+      const dx = wp.x - unit.x;
+      const dy = wp.y - unit.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1) {
+        unit.waypointIndex++;
+        continue;
+      }
+      if (budget >= dist) {
+        unit.x = wp.x;
+        unit.y = wp.y;
+        budget -= dist;
+        unit.waypointIndex++;
+      } else {
+        const t = budget / dist;
+        unit.x += dx * t;
+        unit.y += dy * t;
+        budget = 0;
+      }
+    }
+    this.updateUnitView(unit);
+  }
+
+  private applyDamage(target: AttackTarget, amount: number) {
+    if (target.kind === 'tower') {
+      this.damageTower(target.ref.id, amount);
+    } else {
+      this.damageUnit(target.ref, amount);
+    }
+  }
+
+  private damageUnit(unit: Unit, amount: number) {
+    const destroyed = unit.takeDamage(amount);
+    this.updateUnitView(unit);
+    if (destroyed) {
+      const view = this.unitViews.get(unit.id);
+      view?.body.destroy();
+      view?.hpBar.destroy();
+      this.unitViews.delete(unit.id);
+    }
+  }
+
+  private flashAttack(from: Vec, to: Vec) {
+    const line = this.add.graphics();
+    line.lineStyle(2, 0xffffff, 0.8);
+    line.lineBetween(from.x, from.y, to.x, to.y);
+    this.tweens.add({
+      targets: line,
+      alpha: 0,
+      duration: 220,
+      onComplete: () => line.destroy(),
+    });
   }
 
   // ───── Статика арены ─────
@@ -255,12 +417,12 @@ export class ArenaScene extends Phaser.Scene {
 
   /**
    * Спавнит юнита заданного типа за указанную команду на указанной линии.
-   * Для MVP — без drag&drop, точка спавна жёстко: «у своих ворот, на линии».
+   * Точка спавна задаётся жёстко: для player — между своей принцессой
+   * и рекой; для enemy — зеркально.
    */
   spawnUnit(type: UnitType, team: Side, lane: Lane): Unit {
     const laneCol = LANES[lane].col;
     const x = laneCol * TILE + TILE / 2;
-    // По y: игрок — между своей принцессой и рекой; враг — зеркально.
     const y =
       team === 'player'
         ? (PLAYER_FIRST_ROW + 2) * TILE + TILE / 2
@@ -273,6 +435,7 @@ export class ArenaScene extends Phaser.Scene {
       lane,
       x,
       y,
+      waypoints: LANE_PATHS_PX[lane][team],
     });
     this.units.push(unit);
 
@@ -305,7 +468,6 @@ export class ArenaScene extends Phaser.Scene {
     view.body.x = unit.x;
     view.body.y = unit.y;
 
-    // HP-bar над кругом
     const barW = unit.radius * 2;
     const barH = 3;
     const barX = unit.x - unit.radius;
@@ -320,10 +482,27 @@ export class ArenaScene extends Phaser.Scene {
     bar.fillRect(barX, barY, Math.max(0, barW * unit.hpRatio), barH);
   }
 
-  /** Сколько юнитов сейчас на арене — используется в подписи кнопки. */
   unitCount(): number {
-    return this.units.length;
+    return this.units.filter((u) => !u.isDead).length;
   }
+}
+
+// ───── helpers ─────
+
+function targetX(t: AttackTarget): number {
+  return t.ref.x;
+}
+
+function targetY(t: AttackTarget): number {
+  return t.ref.y;
+}
+
+function targetRadius(t: AttackTarget): number {
+  return t.kind === 'unit' ? t.ref.radius : towerHalfSize(t.ref);
+}
+
+function towerHalfSize(t: Tower): number {
+  return (Math.max(t.rect.w, t.rect.h) * TILE) / 2;
 }
 
 export function createGame(parent: HTMLElement): Phaser.Game {
@@ -343,12 +522,10 @@ export function createGame(parent: HTMLElement): Phaser.Game {
 
 export type { UnitType } from './unit';
 
-// Помощник для React-слоя: типобезопасно достаёт нашу сцену из game.scene.
 export function getArenaScene(game: Phaser.Game | null): ArenaScene | null {
   if (!game) return null;
   const scene = game.scene.getScene('Arena');
   return (scene as ArenaScene) ?? null;
 }
 
-// Подсказка по доступным статам — экспортим, чтобы UI мог показать тултип.
 export { UNIT_STATS };

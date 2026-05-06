@@ -21,9 +21,9 @@ export default function BattlePage() {
     };
   }, []);
 
-  const handleSpawnWarrior = () => {
+  const spawn = (team: 'player' | 'enemy', lane: 'left' | 'right') => {
     const scene = getArenaScene(gameRef.current);
-    scene?.spawnUnit('warrior', 'player', 'left');
+    scene?.spawnUnit('warrior', team, lane);
   };
 
   return (
@@ -32,10 +32,34 @@ export default function BattlePage() {
       <button onClick={() => setScreen('menu')} style={backBtn} aria-label="Выйти из боя">
         ←
       </button>
-      <button onClick={handleSpawnWarrior} style={spawnBtn}>
-        ⚔️ Spawn Warrior
-      </button>
+
+      <div style={spawnBar}>
+        <SpawnBtn label="⚔️ Player L" onClick={() => spawn('player', 'left')} variant="player" />
+        <SpawnBtn label="⚔️ Player R" onClick={() => spawn('player', 'right')} variant="player" />
+        <SpawnBtn label="🤖 Enemy L" onClick={() => spawn('enemy', 'left')} variant="enemy" />
+        <SpawnBtn label="🤖 Enemy R" onClick={() => spawn('enemy', 'right')} variant="enemy" />
+      </div>
     </div>
+  );
+}
+
+function SpawnBtn({
+  label,
+  onClick,
+  variant,
+}: {
+  label: string;
+  onClick: () => void;
+  variant: 'player' | 'enemy';
+}) {
+  const bg =
+    variant === 'player'
+      ? 'linear-gradient(180deg, #2a5d8a 0%, #1c4063 100%)'
+      : 'linear-gradient(180deg, #c1334a 0%, #8a1f33 100%)';
+  return (
+    <button onClick={onClick} style={{ ...spawnBtnBase, background: bg }}>
+      {label}
+    </button>
   );
 }
 
@@ -69,20 +93,26 @@ const backBtn: React.CSSProperties = {
   zIndex: 10,
 };
 
-const spawnBtn: React.CSSProperties = {
+const spawnBar: React.CSSProperties = {
   position: 'absolute',
   bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
-  left: '50%',
-  transform: 'translateX(-50%)',
-  padding: '12px 18px',
-  borderRadius: 12,
-  border: '1px solid rgba(255,255,255,0.15)',
-  background: 'linear-gradient(180deg, #2a5d8a 0%, #1c4063 100%)',
-  color: '#ffffff',
-  fontSize: 15,
-  fontWeight: 700,
-  letterSpacing: 0.5,
-  cursor: 'pointer',
-  boxShadow: '0 6px 16px rgba(0,0,0,0.4)',
+  left: 0,
+  right: 0,
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2, 1fr)',
+  gap: 8,
+  padding: '0 16px',
   zIndex: 10,
+};
+
+const spawnBtnBase: React.CSSProperties = {
+  padding: '10px 12px',
+  borderRadius: 10,
+  border: '1px solid rgba(255,255,255,0.15)',
+  color: '#ffffff',
+  fontSize: 13,
+  fontWeight: 700,
+  letterSpacing: 0.3,
+  cursor: 'pointer',
+  boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
 };

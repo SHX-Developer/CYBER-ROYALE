@@ -8,10 +8,11 @@
  *
  * Стат-табличка карт (cards.ts) лежит в тайлах — не путать с этой.
  */
-import type { Lane, Side } from './arena';
+import type { Lane, Side, Vec } from './arena';
 
 export type UnitType = 'warrior';
 export type UnitTarget = 'ground' | 'air' | 'any';
+export type UnitState = 'moving' | 'attacking';
 
 export interface UnitStats {
   maxHp: number;
@@ -43,6 +44,8 @@ export interface UnitInit {
   lane: Lane;
   x: number;
   y: number;
+  /** Точки маршрута; юнит идёт по ним, пока не нашёл цель. */
+  waypoints: Vec[];
 }
 
 export class Unit {
@@ -64,8 +67,12 @@ export class Unit {
   readonly radius: number;
 
   isDead = false;
-  /** Время последней атаки (мс), пригодится для тайминга на следующих этапах. */
-  lastAttackAt = 0;
+  state: UnitState = 'moving';
+  /** Время последней атаки в мс scene-time; -∞ → первый удар сразу при сближении. */
+  lastAttackAt = Number.NEGATIVE_INFINITY;
+
+  readonly waypoints: Vec[];
+  waypointIndex = 0;
 
   constructor(init: UnitInit) {
     const stats = UNIT_STATS[init.type];
@@ -85,6 +92,8 @@ export class Unit {
     this.moveSpeed = stats.moveSpeed;
     this.target = stats.target;
     this.radius = stats.radius;
+
+    this.waypoints = init.waypoints;
   }
 
   takeDamage(amount: number): boolean {
@@ -99,5 +108,10 @@ export class Unit {
 
   get hpRatio(): number {
     return this.maxHp > 0 ? this.hp / this.maxHp : 0;
+  }
+
+  /** Текущая активная путевая точка (или null, если маршрут пройден). */
+  currentWaypoint(): Vec | null {
+    return this.waypoints[this.waypointIndex] ?? null;
   }
 }

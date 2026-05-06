@@ -30,6 +30,11 @@ export const PLAYER_FIRST_ROW = RIVER_BOTTOM_ROW + 1;
 export type Side = 'player' | 'enemy';
 export type Lane = 'left' | 'right';
 
+export interface Vec {
+  x: number;
+  y: number;
+}
+
 export interface TilePos {
   col: number;
   row: number;
@@ -45,6 +50,52 @@ export interface RectInTiles {
 export const LANES: Record<Lane, { col: number }> = {
   left: { col: 1 }, // тайл 1 (центр оси на 1.5)
   right: { col: 6 }, // тайл 6 (центр оси на 6.5)
+};
+
+/**
+ * Линии движения юнитов в пикселях.
+ *
+ * Каждый юнит, поставленный на lane L за команду T, идёт по точкам
+ * LANE_PATHS_PX[L][T]. Точка близка → берём следующую. Последняя точка
+ * заведена ровно к фронту вражеской половины — оттуда уже targeting
+ * подцепит вражеские башни и юниты.
+ *
+ * Координаты заточены под арену 360×720, lane.left.col=1 (x=60),
+ * lane.right.col=6 (x=260). Мосты на этих же x пересекают реку,
+ * поэтому путь — прямая линия x=const.
+ */
+const LEFT_X = LANES.left.col * TILE + TILE / 2; // 60
+const RIGHT_X = LANES.right.col * TILE + TILE / 2; // 260
+const NEAR_BRIDGE_PLAYER = (RIVER_BOTTOM_ROW + 1) * TILE + TILE / 2; // 420 — после моста
+const NEAR_BRIDGE_ENEMY = RIVER_TOP_ROW * TILE - TILE / 2; // 300 — перед мостом снизу для врага
+const FRONT_PLAYER_HALF = (PLAYER_FIRST_ROW + 2) * TILE + TILE / 2; // ~500 — фронт игрока
+const FRONT_ENEMY_HALF = (RIVER_TOP_ROW - 3) * TILE + TILE / 2; // ~220 — фронт врага
+
+export const LANE_PATHS_PX: Record<Lane, Record<Side, Vec[]>> = {
+  left: {
+    player: [
+      { x: LEFT_X, y: NEAR_BRIDGE_PLAYER }, // подойти к мосту
+      { x: LEFT_X, y: FRONT_ENEMY_HALF }, // на вражеский фронт
+      { x: LEFT_X, y: 100 }, // у вражеской принцессы
+    ],
+    enemy: [
+      { x: LEFT_X, y: NEAR_BRIDGE_ENEMY },
+      { x: LEFT_X, y: FRONT_PLAYER_HALF },
+      { x: LEFT_X, y: 620 },
+    ],
+  },
+  right: {
+    player: [
+      { x: RIGHT_X, y: NEAR_BRIDGE_PLAYER },
+      { x: RIGHT_X, y: FRONT_ENEMY_HALF },
+      { x: RIGHT_X, y: 100 },
+    ],
+    enemy: [
+      { x: RIGHT_X, y: NEAR_BRIDGE_ENEMY },
+      { x: RIGHT_X, y: FRONT_PLAYER_HALF },
+      { x: RIGHT_X, y: 620 },
+    ],
+  },
 };
 
 /**
