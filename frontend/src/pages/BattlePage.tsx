@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type Phaser from 'phaser';
-import { createGame } from '@/game/PhaserGame';
+import { createGame, getArenaScene } from '@/game/PhaserGame';
 import { useUiStore } from '@/store/uiStore';
 import {
   CARDS,
@@ -29,6 +29,15 @@ export default function BattlePage() {
     };
   }, []);
 
+  const playAgain = () => {
+    const scene = getArenaScene(gameRef.current);
+    if (scene) {
+      scene.scene.restart(); // create() сам сбросит стор
+    } else {
+      useBattleStore.getState().reset();
+    }
+  };
+
   return (
     <div style={page}>
       <div ref={containerRef} style={canvasWrap} />
@@ -37,34 +46,47 @@ export default function BattlePage() {
         ←
       </button>
 
-      <ScoreBadge />
+      <TopBar />
 
       <div style={hudWrap}>
         <EnergyBar />
         <HandPanel />
       </div>
 
-      <ResultOverlay onExit={() => setScreen('menu')} />
+      <ResultOverlay onExit={() => setScreen('menu')} onPlayAgain={playAgain} />
     </div>
   );
 }
 
-function ScoreBadge() {
+function TopBar() {
   const td = useBattleStore((s) => s.towersDestroyed);
+  const timeLeft = useBattleStore((s) => s.matchTimeLeftMs);
   return (
-    <div style={scoreBadge}>
-      <span style={{ color: '#7fb9ff' }}>★ {td.enemy}</span>
-      <span style={{ opacity: 0.4, margin: '0 6px' }}>:</span>
-      <span style={{ color: '#ff8585' }}>{td.player} ★</span>
+    <div style={topBar}>
+      <Badge>
+        <span style={{ color: '#7fb9ff' }}>★ {td.enemy}</span>
+        <span style={{ opacity: 0.4, margin: '0 6px' }}>:</span>
+        <span style={{ color: '#ff8585' }}>{td.player} ★</span>
+      </Badge>
+      <Badge>
+        <span style={{ opacity: 0.7 }}>⏱</span>
+        <span style={{ marginLeft: 6, fontVariantNumeric: 'tabular-nums' }}>
+          {formatTime(timeLeft)}
+        </span>
+      </Badge>
     </div>
   );
+}
+
+function Badge({ children }: { children: React.ReactNode }) {
+  return <div style={badge}>{children}</div>;
 }
 
 function EnergyBar() {
   const energy = useBattleStore((s) => s.energy);
   const pulse = useBattleStore((s) => s.insufficientPulse);
   return (
-    <div style={energyOuter} key={pulse} className={pulse ? 'energy-pulse' : ''}>
+    <div style={energyOuter} key={pulse}>
       <div
         style={{
           ...energyFill,
@@ -143,28 +165,78 @@ function NextCardSlot({ card }: { card: CardDef | undefined }) {
   );
 }
 
-function ResultOverlay({ onExit }: { onExit: () => void }) {
+function ResultOverlay({
+  onExit,
+  onPlayAgain,
+}: {
+  onExit: () => void;
+  onPlayAgain: () => void;
+}) {
   const gameState = useBattleStore((s) => s.gameState);
+  const result = useBattleStore((s) => s.result);
   if (gameState === 'playing') return null;
-  const won = gameState === 'won';
+
+  const title =
+    gameState === 'won' ? 'Победа' : gameState === 'lost' ? 'Поражение' : 'Ничья';
+  const emoji = gameState === 'won' ? '🏆' : gameState === 'lost' ? '💀' : '🤝';
+  const accent =
+    gameState === 'won'
+      ? 'linear-gradient(180deg, #ffd267 0%, #f0a83a 100%)'
+      : gameState === 'lost'
+        ? 'linear-gradient(180deg, #c1334a 0%, #8a1f33 100%)'
+        : 'linear-gradient(180deg, #2a5d8a 0%, #1c4063 100%)';
+
   return (
     <div style={overlay}>
       <div style={overlayCard}>
-        <div style={{ fontSize: 56 }}>{won ? '🏆' : '💀'}</div>
-        <h2 style={{ margin: 0, fontSize: 24, letterSpacing: 1 }}>
-          {won ? 'Победа' : 'Поражение'}
-        </h2>
-        <p style={{ opacity: 0.65, margin: 0, fontSize: 13, textAlign: 'center' }}>
-          {won
-            ? 'Вражеский король разрушен.'
-            : 'Твой король не выстоял. Попробуй ещё раз.'}
-        </p>
-        <button onClick={onExit} style={overlayBtn}>
-          В меню
-        </button>
+        <div style={{ fontSize: 56 }}>{emoji}</div>
+        <h2 style={{ margin: 0, fontSize: 26, letterSpacing: 1 }}>{title}</h2>
+
+        {result && (
+          <div style={statsGrid}>
+            <Stat label="Длительность" value={formatTime(result.durationSec * 1000)} />
+            <Stat label="Сломал" value={`★ ${result.towersDestroyed}`} />
+            <Stat label="Потерял" value={`☠ ${result.towersLost}`} />
+            <Stat label="Монеты" value={`🪙 ${result.coinsEarned}`} />
+            <Stat label="Опыт" value={`✨ ${result.xpEarned}`} />
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+          <button onClick={onPlayAgain} style={{ ...overlayBtn, background: accent, flex: 1 }}>
+            Играть снова
+          </button>
+          <button
+            onClick={onExit}
+            style={{
+              ...overlayBtn,
+              background: '#0f1320',
+              color: '#e7ecf3',
+              flex: 1,
+            }}
+          >
+            В меню
+          </button>
+        </div>
       </div>
     </div>
   );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={statBox}>
+      <div style={{ fontSize: 10, opacity: 0.6, letterSpacing: 0.5 }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{value}</div>
+    </div>
+  );
+}
+
+function formatTime(ms: number): string {
+  const total = Math.ceil(Math.max(0, ms) / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 const page: React.CSSProperties = {
@@ -197,11 +269,18 @@ const backBtn: React.CSSProperties = {
   zIndex: 10,
 };
 
-const scoreBadge: React.CSSProperties = {
+const topBar: React.CSSProperties = {
   position: 'absolute',
-  top: 14,
-  left: '50%',
-  transform: 'translateX(-50%)',
+  top: 12,
+  left: 60,
+  right: 12,
+  display: 'flex',
+  justifyContent: 'space-between',
+  gap: 8,
+  zIndex: 10,
+};
+
+const badge: React.CSSProperties = {
   padding: '6px 12px',
   borderRadius: 999,
   background: 'rgba(11,13,18,0.65)',
@@ -209,7 +288,8 @@ const scoreBadge: React.CSSProperties = {
   color: '#e7ecf3',
   fontSize: 13,
   fontWeight: 700,
-  zIndex: 10,
+  display: 'inline-flex',
+  alignItems: 'center',
 };
 
 const hudWrap: React.CSSProperties = {
@@ -255,7 +335,6 @@ const energyText: React.CSSProperties = {
   letterSpacing: 0.5,
 };
 
-// 4 карты руки + 1 узкий слот «next» справа.
 const hand4plusNext: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(4, 1fr) 0.55fr',
@@ -336,14 +415,27 @@ const overlayCard: React.CSSProperties = {
   textAlign: 'center',
 };
 
-const overlayBtn: React.CSSProperties = {
+const statsGrid: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(3, 1fr)',
+  gap: 6,
   width: '100%',
+};
+
+const statBox: React.CSSProperties = {
+  padding: 8,
+  borderRadius: 8,
+  background: '#0f1320',
+  border: '1px solid #1f2738',
+  textAlign: 'center',
+};
+
+const overlayBtn: React.CSSProperties = {
   padding: '12px 16px',
   borderRadius: 12,
   border: '1px solid #2a3142',
-  background: 'linear-gradient(180deg, #ffd267 0%, #f0a83a 100%)',
   color: '#1a1a1a',
-  fontSize: 15,
+  fontSize: 14,
   fontWeight: 800,
   cursor: 'pointer',
   marginTop: 4,

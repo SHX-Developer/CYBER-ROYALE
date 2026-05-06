@@ -31,7 +31,6 @@ export const CARDS: Record<CardCode, CardDef> = {
   heal: { code: 'heal', name: 'Лечение', energyCost: 2, icon: '✨', kind: 'spell' },
 };
 
-/** Стартовая колода игрока — 8 карт, как в Clash Royale. */
 export const STARTER_DECK: CardCode[] = [
   'warrior',
   'archer',
@@ -47,8 +46,20 @@ export const HAND_SIZE = 4;
 export const MAX_ENERGY = 10;
 export const START_ENERGY = 5;
 export const ENERGY_REGEN_INTERVAL_MS = 2800;
+export const MATCH_DURATION_MS = 3 * 60 * 1000; // 3 минуты
 
-export type GameState = 'playing' | 'won' | 'lost';
+export type GameState = 'playing' | 'won' | 'lost' | 'draw';
+
+export interface MatchResult {
+  outcome: 'won' | 'lost' | 'draw';
+  durationSec: number;
+  /** Сколько вражеских башен разрушил игрок. */
+  towersDestroyed: number;
+  /** Сколько своих башен потерял игрок. */
+  towersLost: number;
+  coinsEarned: number;
+  xpEarned: number;
+}
 
 interface BattleState {
   /** Колода длиной 8: первые HAND_SIZE — рука, deck[HAND_SIZE] — следующая. */
@@ -57,19 +68,21 @@ interface BattleState {
   energy: number;
   towersDestroyed: { player: number; enemy: number };
   gameState: GameState;
-  /** Импульс «не хватает энергии / нельзя сюда» — UI на это мигает. */
   insufficientPulse: number;
+  matchTimeLeftMs: number;
+  result: MatchResult | null;
 
   selectCard: (code: CardCode) => void;
   clearSelected: () => void;
   setEnergy: (v: number) => void;
   addEnergy: (delta: number) => void;
   spendEnergy: (cost: number) => boolean;
-  /** После применения карта уходит в конец очереди. */
   cycleCard: (code: CardCode) => void;
   pulseInsufficient: () => void;
   setTowersDestroyed: (side: 'player' | 'enemy', count: number) => void;
   setGameState: (s: GameState) => void;
+  setMatchTimeLeft: (ms: number) => void;
+  setResult: (r: MatchResult) => void;
   reset: () => void;
 }
 
@@ -80,6 +93,8 @@ export const useBattleStore = create<BattleState>((set, get) => ({
   towersDestroyed: { player: 0, enemy: 0 },
   gameState: 'playing',
   insufficientPulse: 0,
+  matchTimeLeftMs: MATCH_DURATION_MS,
+  result: null,
 
   selectCard: (code) => {
     if (get().gameState !== 'playing') return;
@@ -114,6 +129,8 @@ export const useBattleStore = create<BattleState>((set, get) => ({
   setTowersDestroyed: (side, count) =>
     set((s) => ({ towersDestroyed: { ...s.towersDestroyed, [side]: count } })),
   setGameState: (gameState) => set({ gameState }),
+  setMatchTimeLeft: (ms) => set({ matchTimeLeftMs: ms }),
+  setResult: (result) => set({ result }),
 
   reset: () =>
     set({
@@ -123,5 +140,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
       towersDestroyed: { player: 0, enemy: 0 },
       gameState: 'playing',
       insufficientPulse: 0,
+      matchTimeLeftMs: MATCH_DURATION_MS,
+      result: null,
     }),
 }));

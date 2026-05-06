@@ -25,8 +25,14 @@ import { SPELL_STATS, type SpellCode } from './spells';
 import {
   CARDS,
   ENERGY_REGEN_INTERVAL_MS,
+  HAND_SIZE,
+  MATCH_DURATION_MS,
+  MAX_ENERGY,
+  START_ENERGY,
+  STARTER_DECK,
   useBattleStore,
   type CardCode,
+  type MatchResult,
 } from '@/store/battleStore';
 
 interface TowerView {
@@ -39,6 +45,7 @@ interface TowerView {
 interface UnitView {
   body: Phaser.GameObjects.Graphics;
   hpBar: Phaser.GameObjects.Graphics;
+  label: Phaser.GameObjects.Text;
 }
 
 type AttackTarget =
@@ -46,7 +53,6 @@ type AttackTarget =
   | { kind: 'tower'; ref: Tower };
 
 const PERCEPTION_BONUS = 80;
-const ENEMY_AUTO_SPAWN_MS = 5000;
 
 export class ArenaScene extends Phaser.Scene {
   towers: Tower[] = [];
@@ -57,8 +63,14 @@ export class ArenaScene extends Phaser.Scene {
   private nextUnitId = 1;
 
   private energyTimer?: Phaser.Time.TimerEvent;
-  private enemyTimer?: Phaser.Time.TimerEvent;
+  private botEnergyTimer?: Phaser.Time.TimerEvent;
+  private matchTimer?: Phaser.Time.TimerEvent;
   private gameOver = false;
+  private matchStartedAt = 0;
+
+  // AI-бот
+  private botEnergy = START_ENERGY;
+  private botDeck: CardCode[] = [...STARTER_DECK];
 
   private zoneGfx?: Phaser.GameObjects.Graphics;
   private zoneUnsub?: () => void;
@@ -71,6 +83,16 @@ export class ArenaScene extends Phaser.Scene {
   create() {
     useBattleStore.getState().reset();
 
+    this.gameOver = false;
+    this.towers = [];
+    this.units = [];
+    this.towerViews.clear();
+    this.unitViews.clear();
+    this.nextUnitId = 1;
+    this.botEnergy = START_ENERGY;
+    this.botDeck = [...STARTER_DECK];
+    this.matchStartedAt = this.time.now;
+
     this.cameras.main.setBackgroundColor('#0b0d12');
     this.drawZones();
     this.drawLanes();
@@ -80,13 +102,11 @@ export class ArenaScene extends Phaser.Scene {
     this.drawSideLabels();
     this.spawnTowers();
 
-    // Слой подсветки зоны размещения. Поверх арены, под HUD'ом юнитов.
     this.zoneGfx = this.add.graphics();
     this.zoneGfx.setDepth(50);
 
     this.input.on('pointerdown', this.onPointerDown, this);
 
-    // Реакция на смену выбранной карты.
     this.zoneUnsub = useBattleStore.subscribe((state) => {
       if (state.selectedCard !== this.lastSelected) {
         this.lastSelected = state.selectedCard;
@@ -94,6 +114,7 @@ export class ArenaScene extends Phaser.Scene {
       }
     });
 
+    // Регэн энергии игрока.
     this.energyTimer = this.time.addEvent({
       delay: ENERGY_REGEN_INTERVAL_MS,
       loop: true,
@@ -103,15 +124,31 @@ export class ArenaScene extends Phaser.Scene {
       },
     });
 
-    this.enemyTimer = this.time.addEvent({
-      delay: ENEMY_AUTO_SPAWN_MS,
+    // Регэн энергии бота.
+    this.botEnergyTimer = this.time.addEvent({
+      delay: ENERGY_REGEN_INTERVAL_MS,
       loop: true,
       callback: () => {
         if (this.gameOver) return;
-        const lane: Lane = Math.random() < 0.5 ? 'left' : 'right';
-        this.spawnUnit('warrior', 'enemy', lane);
+        this.botEnergy = Math.min(MAX_ENERGY, this.botEnergy + 1);
       },
     });
+
+    // Тайм-тик матча: каждые 200мс обновляем оставшееся время в стор.
+    this.matchTimer = this.time.addEvent({
+      delay: 200,
+      loop: true,
+      callback: () => {
+        if (this.gameOver) return;
+        const elapsed = this.time.now - this.matchStartedAt;
+        const left = Math.max(0, MATCH_DURATION_MS - elapsed);
+        useBattleStore.getState().setMatchTimeLeft(left);
+        if (left === 0) this.onTimeout();
+      },
+    });
+
+    // Запуск AI-бота с рандомным интервалом.
+    this.scheduleBotTick();
 
     this.events.once('shutdown', () => {
       this.zoneUnsub?.();
@@ -258,23 +295,50 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private damageUnit(unit: Unit, amount: number) {
+    const wasAlive = !unit.isDead;
     const destroyed = unit.takeDamage(amount);
     this.updateUnitView(unit);
-    if (destroyed) {
-      const view = this.unitViews.get(unit.id);
-      if (view) {
-        this.tweens.add({
-          targets: [view.body, view.hpBar],
-          alpha: 0,
-          duration: 250,
-          onComplete: () => {
-            view.body.destroy();
-            view.hpBar.destroy();
-            this.unitViews.delete(unit.id);
-          },
-        });
-      }
+    const view = this.unitViews.get(unit.id);
+    if (!view) return;
+
+    if (wasAlive && !destroyed) {
+      // Damage flash.
+      this.tweens.killTweensOf(view.body);
+      view.body.alpha = 0.4;
+      this.tweens.add({
+        targets: view.body,
+        alpha: 1,
+        duration: 130,
+      });
     }
+
+    if (destroyed) {
+      this.deathPoof(unit.x, unit.y, unit.team === 'player' ? 0x2a5d8a : 0xc1334a);
+      this.tweens.add({
+        targets: [view.body, view.hpBar, view.label],
+        alpha: 0,
+        duration: 250,
+        onComplete: () => {
+          view.body.destroy();
+          view.hpBar.destroy();
+          view.label.destroy();
+          this.unitViews.delete(unit.id);
+        },
+      });
+    }
+  }
+
+  private deathPoof(x: number, y: number, color: number) {
+    const g = this.add.graphics();
+    g.fillStyle(color, 0.55);
+    g.fillCircle(x, y, 10);
+    this.tweens.add({
+      targets: g,
+      scale: 2.5,
+      alpha: 0,
+      duration: 380,
+      onComplete: () => g.destroy(),
+    });
   }
 
   private flashAttack(from: Vec, to: Vec) {
@@ -289,7 +353,7 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-  // ───── Pointer / placement ─────
+  // ───── Pointer / placement (игрок) ─────
 
   private onPointerDown(pointer: Phaser.Input.Pointer) {
     if (this.gameOver) return;
@@ -305,7 +369,6 @@ export class ArenaScene extends Phaser.Scene {
       store.pulseInsufficient();
       return;
     }
-
     if (store.energy < card.energyCost) {
       store.pulseInsufficient();
       return;
@@ -324,10 +387,6 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
-  /**
-   * Юнит — только своя половина и не на свои башни.
-   * Заклинание — везде в пределах арены.
-   */
   private isValidPlacement(code: CardCode, x: number, y: number): boolean {
     if (x < 0 || x > ARENA_WIDTH || y < 0 || y > ARENA_HEIGHT) return false;
     const card = CARDS[code];
@@ -348,7 +407,6 @@ export class ArenaScene extends Phaser.Scene {
     const card = CARDS[code];
 
     if (card.kind === 'unit') {
-      // Зелёный прямоугольник на нашей половине.
       this.zoneGfx.fillStyle(0x88ffaa, 0.12);
       this.zoneGfx.fillRect(
         0,
@@ -356,14 +414,12 @@ export class ArenaScene extends Phaser.Scene {
         ARENA_WIDTH,
         ARENA_HEIGHT - PLAYER_FIRST_ROW * TILE,
       );
-      // Свои башни помечаем no-go красным.
       this.zoneGfx.fillStyle(0xff5566, 0.25);
       for (const t of this.towers) {
         if (t.team !== 'player') continue;
         const r = rectToPx(t.rect);
         this.zoneGfx.fillRect(r.x, r.y, r.w, r.h);
       }
-      // Тонкая обводка границы зоны размещения.
       this.zoneGfx.lineStyle(2, 0x88ffaa, 0.5);
       this.zoneGfx.strokeRect(
         1,
@@ -372,7 +428,6 @@ export class ArenaScene extends Phaser.Scene {
         ARENA_HEIGHT - PLAYER_FIRST_ROW * TILE - 2,
       );
     } else {
-      // Spell — вся арена жёлтым.
       this.zoneGfx.fillStyle(0xffaa55, 0.1);
       this.zoneGfx.fillRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
       this.zoneGfx.lineStyle(2, 0xffaa55, 0.5);
@@ -385,12 +440,10 @@ export class ArenaScene extends Phaser.Scene {
   private castSpell(code: SpellCode, x: number, y: number, casterTeam: Side) {
     const stats = SPELL_STATS[code];
 
-    // Визуал.
+    // Внутренний круг (область).
     const gfx = this.add.graphics();
     gfx.fillStyle(stats.color, 0.45);
     gfx.fillCircle(x, y, stats.radius);
-    gfx.lineStyle(2, 0xffd267, 1);
-    gfx.strokeCircle(x, y, stats.radius);
     this.tweens.add({
       targets: gfx,
       alpha: 0,
@@ -398,9 +451,24 @@ export class ArenaScene extends Phaser.Scene {
       onComplete: () => gfx.destroy(),
     });
 
-    // Действие.
+    // Расширяющееся кольцо.
+    const ringState = { r: 0 };
+    const ring = this.add.graphics();
+    this.tweens.add({
+      targets: ringState,
+      r: stats.radius * 1.15,
+      duration: 500,
+      ease: 'Quad.Out',
+      onUpdate: () => {
+        ring.clear();
+        ring.lineStyle(3, stats.color, 0.7);
+        ring.strokeCircle(x, y, ringState.r);
+      },
+      onComplete: () => ring.destroy(),
+    });
+
     if (stats.hostile) {
-      // Урон врагам.
+      this.cameras.main.shake(180, 0.003);
       for (const u of this.units) {
         if (u.isDead || u.team === casterTeam) continue;
         const d = Math.hypot(u.x - x, u.y - y);
@@ -415,7 +483,6 @@ export class ArenaScene extends Phaser.Scene {
         }
       }
     } else {
-      // Лечение союзников.
       for (const u of this.units) {
         if (u.isDead || u.team !== casterTeam) continue;
         const d = Math.hypot(u.x - x, u.y - y);
@@ -425,6 +492,122 @@ export class ArenaScene extends Phaser.Scene {
         }
       }
     }
+  }
+
+  // ───── AI-бот ─────
+
+  private scheduleBotTick() {
+    if (this.gameOver) return;
+    const delay = 3000 + Math.random() * 2000; // 3–5 секунд
+    this.time.delayedCall(delay, () => {
+      if (this.gameOver) return;
+      this.botTick();
+      this.scheduleBotTick();
+    });
+  }
+
+  private botTick() {
+    const hand = this.botDeck.slice(0, HAND_SIZE);
+    const affordable = hand.filter((code) => CARDS[code].energyCost <= this.botEnergy);
+    if (!affordable.length) return;
+
+    // С небольшой вероятностью дождаться больше энергии — не сливать дешёвки на старте.
+    if (this.botEnergy < 4 && Math.random() < 0.4) return;
+
+    const code = affordable[Math.floor(Math.random() * affordable.length)];
+    const card = CARDS[code];
+
+    if (card.kind === 'spell') {
+      const target =
+        code === 'heal'
+          ? this.pickHealCenter('enemy')
+          : this.pickHostileCenter('player');
+      if (!target) return; // пропускаем тик — нет смысла кидать в пустоту
+      this.botEnergy -= card.energyCost;
+      this.castSpell(code as SpellCode, target.x, target.y, 'enemy');
+      this.cycleBotCard(code);
+      return;
+    }
+
+    // Юнит — выбираем линию с ориентацией на угрозу или случайно.
+    const lane = this.pickBotLane();
+    this.botEnergy -= card.energyCost;
+    this.spawnUnit(code as UnitType, 'enemy', lane);
+    this.cycleBotCard(code);
+  }
+
+  private cycleBotCard(code: CardCode) {
+    const i = this.botDeck.indexOf(code);
+    if (i < 0) return;
+    this.botDeck.splice(i, 1);
+    this.botDeck.push(code);
+  }
+
+  /** Куда бы ботнуть unit: если игрок копит на одном фланге — туда же. */
+  private pickBotLane(): Lane {
+    const left = this.units.filter((u) => u.team === 'player' && !u.isDead && u.lane === 'left').length;
+    const right = this.units.filter((u) => u.team === 'player' && !u.isDead && u.lane === 'right').length;
+    if (left === right) return Math.random() < 0.5 ? 'left' : 'right';
+    return left > right ? 'left' : 'right';
+  }
+
+  private pickHostileCenter(targetTeam: Side): Vec | null {
+    const enemies = this.units.filter((u) => u.team === targetTeam && !u.isDead);
+    if (enemies.length === 0) return null;
+    const seed = enemies[Math.floor(Math.random() * enemies.length)];
+    const nearby = enemies.filter((u) => Math.hypot(u.x - seed.x, u.y - seed.y) < 70);
+    if (nearby.length < 2) return null;
+    const cx = nearby.reduce((s, u) => s + u.x, 0) / nearby.length;
+    const cy = nearby.reduce((s, u) => s + u.y, 0) / nearby.length;
+    return { x: cx, y: cy };
+  }
+
+  private pickHealCenter(myTeam: Side): Vec | null {
+    const wounded = this.units.filter((u) => u.team === myTeam && !u.isDead && u.hpRatio < 0.6);
+    if (wounded.length < 2) return null;
+    const cx = wounded.reduce((s, u) => s + u.x, 0) / wounded.length;
+    const cy = wounded.reduce((s, u) => s + u.y, 0) / wounded.length;
+    return { x: cx, y: cy };
+  }
+
+  // ───── Финал матча ─────
+
+  private onTimeout() {
+    if (this.gameOver) return;
+    const td = useBattleStore.getState().towersDestroyed;
+    if (td.enemy > td.player) this.endGame('won');
+    else if (td.player > td.enemy) this.endGame('lost');
+    else this.endGame('draw');
+  }
+
+  private endGame(result: 'won' | 'lost' | 'draw') {
+    if (this.gameOver) return;
+    this.gameOver = true;
+
+    const td = useBattleStore.getState().towersDestroyed;
+    const elapsedMs = this.time.now - this.matchStartedAt;
+    const durationSec = Math.max(0, Math.floor(elapsedMs / 1000));
+
+    const baseCoins = result === 'won' ? 50 : result === 'draw' ? 15 : 5;
+    const baseXp = result === 'won' ? 25 : result === 'draw' ? 10 : 5;
+    const coins = baseCoins + td.enemy * 10;
+    const xp = baseXp + td.enemy * 5;
+
+    const matchResult: MatchResult = {
+      outcome: result,
+      durationSec,
+      towersDestroyed: td.enemy,
+      towersLost: td.player,
+      coinsEarned: coins,
+      xpEarned: xp,
+    };
+
+    useBattleStore.getState().setResult(matchResult);
+    useBattleStore.getState().setGameState(result);
+
+    this.energyTimer?.remove();
+    this.botEnergyTimer?.remove();
+    this.matchTimer?.remove();
   }
 
   // ───── Статика арены ─────
@@ -594,11 +777,36 @@ export class ArenaScene extends Phaser.Scene {
   damageTower(id: string, amount: number) {
     const tower = this.towers.find((t) => t.id === id);
     if (!tower) return;
+    const wasAlive = !tower.isDestroyed;
     const destroyed = tower.takeDamage(amount);
     this.updateTowerHud(tower);
+
+    const view = this.towerViews.get(id);
+
+    if (wasAlive && !destroyed && view) {
+      this.tweens.killTweensOf(view.body);
+      view.body.alpha = 0.5;
+      this.tweens.add({
+        targets: view.body,
+        alpha: 1,
+        duration: 130,
+      });
+    }
+
     if (destroyed) {
-      const view = this.towerViews.get(id);
+      // shake + жёлтая вспышка по корпусу
+      this.cameras.main.shake(320, 0.006);
       if (view) {
+        const r = rectToPx(tower.rect);
+        const flash = this.add.graphics();
+        flash.fillStyle(0xfff58c, 0.8);
+        flash.fillRoundedRect(r.x + 4, r.y + 4, r.w - 8, r.h - 8, 6);
+        this.tweens.add({
+          targets: flash,
+          alpha: 0,
+          duration: 500,
+          onComplete: () => flash.destroy(),
+        });
         this.tweens.add({
           targets: view.body,
           alpha: 0.3,
@@ -618,14 +826,6 @@ export class ArenaScene extends Phaser.Scene {
         this.endGame(tower.team === 'enemy' ? 'won' : 'lost');
       }
     }
-  }
-
-  private endGame(result: 'won' | 'lost') {
-    if (this.gameOver) return;
-    this.gameOver = true;
-    useBattleStore.getState().setGameState(result);
-    this.energyTimer?.remove();
-    this.enemyTimer?.remove();
   }
 
   // ───── Юниты ─────
@@ -652,6 +852,20 @@ export class ArenaScene extends Phaser.Scene {
     const view = this.drawUnit(unit);
     this.unitViews.set(unit.id, view);
     this.updateUnitView(unit);
+
+    // spawn-in animation: scale 0.3 → 1
+    view.body.setScale(0.3);
+    view.body.alpha = 0.5;
+    view.label.setScale(0.3);
+    view.label.alpha = 0;
+    this.tweens.add({
+      targets: [view.body, view.label],
+      scale: 1,
+      alpha: 1,
+      duration: 230,
+      ease: 'Back.Out',
+    });
+
     return unit;
   }
 
@@ -674,10 +888,9 @@ export class ArenaScene extends Phaser.Scene {
       color: '#ffffff',
     });
     label.setOrigin(0.5);
-    body.setData('label', label);
 
     const hpBar = this.add.graphics();
-    return { body, hpBar };
+    return { body, hpBar, label };
   }
 
   private updateUnitView(unit: Unit) {
@@ -685,11 +898,8 @@ export class ArenaScene extends Phaser.Scene {
     if (!view) return;
     view.body.x = unit.x;
     view.body.y = unit.y;
-    const label = view.body.getData('label') as Phaser.GameObjects.Text | undefined;
-    if (label) {
-      label.x = unit.x;
-      label.y = unit.y;
-    }
+    view.label.x = unit.x;
+    view.label.y = unit.y;
 
     const barW = unit.radius * 2;
     const barH = 3;
