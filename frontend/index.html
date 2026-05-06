@@ -8,6 +8,12 @@
     <style>
       html, body, #root { height: 100%; margin: 0; padding: 0; overscroll-behavior: none; }
       body { background: #0b0d12; color: #e7ecf3; font-family: system-ui, -apple-system, sans-serif; }
+      /* Telegram WebApp кладёт сверху системные кнопки (close/menu).
+         Освобождаем под них 60px для всего корня приложения. */
+      #root {
+        padding-top: 60px;
+        box-sizing: border-box;
+      }
     </style>
   </head>
   <body>
