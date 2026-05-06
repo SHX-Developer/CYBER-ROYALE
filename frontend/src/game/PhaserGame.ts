@@ -55,15 +55,19 @@ interface TowerView {
 interface UnitView {
   /** Тёмный эллипс на земле — даёт ощущение объёма. */
   shadow: Phaser.GameObjects.Graphics;
-  /** Корпус юнита (чуть выше «земли», bobs при ходьбе). */
+  /** Векторная псевдо-3D модель юнита. */
   body: Phaser.GameObjects.Graphics;
   hpBar: Phaser.GameObjects.Graphics;
-  label: Phaser.GameObjects.Text;
   hpText: Phaser.GameObjects.Text;
+  lastHp: number;
 }
 
 /** Высота «корпуса» над землёй — псевдо-3D. */
 const UNIT_LIFT = 5;
+const RENDER_DPR = Math.min(
+  3,
+  Math.max(1, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1),
+);
 
 export class ArenaScene extends Phaser.Scene {
   private engine!: BattleEngine;
@@ -457,6 +461,7 @@ export class ArenaScene extends Phaser.Scene {
     style: Phaser.Types.GameObjects.Text.TextStyle,
   ): Phaser.GameObjects.Text {
     const t = this.add.text(x, y, text, style);
+    t.setResolution(RENDER_DPR);
     this.world.add(t);
     return t;
   }
@@ -917,50 +922,126 @@ export class ArenaScene extends Phaser.Scene {
     shadow.x = unit.x;
     shadow.y = unit.y;
 
-    // Корпус — поднят над землёй на UNIT_LIFT, с боковой гранью для псевдо-3D.
     const body = this.wG();
-    body.fillStyle(stroke, 0.95);
-    body.fillEllipse(2, 4, unit.radius * 1.8, unit.radius * 1.2);
-    body.fillStyle(fill, 1);
-    body.lineStyle(2, stroke, 1);
-    body.fillCircle(0, 0, unit.radius);
-    body.strokeCircle(0, 0, unit.radius);
-    body.fillStyle(0xffffff, 0.18);
-    body.fillCircle(-unit.radius * 0.3, -unit.radius * 0.4, unit.radius * 0.45);
+    this.drawUnitModel(body, unit, fill, stroke);
     body.x = unit.x;
     body.y = unit.y - UNIT_LIFT;
 
-    const label = this.wT(unit.x, unit.y - UNIT_LIFT, typeGlyph(unit.type), {
+    const hpText = this.wT(unit.x, unit.y - UNIT_LIFT - unit.radius - 8, `${unit.hp}`, {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '11px',
-      color: '#ffffff',
-    }).setOrigin(0.5);
-
-    const hpText = this.wT(unit.x, unit.y - UNIT_LIFT - unit.radius - 8, '', {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '8px',
+      fontSize: '9px',
       color: '#ffffff',
       fontStyle: 'bold',
+      stroke: '#071018',
+      strokeThickness: 2,
     }).setOrigin(0.5, 1);
 
     const hpBar = this.wG();
 
-    this.unitViews.set(unit.id, { shadow, body, hpBar, label, hpText });
+    this.unitViews.set(unit.id, { shadow, body, hpBar, hpText, lastHp: unit.hp });
     this.updateUnitView(unit);
 
     // Spawn-in animation.
     body.setScale(0.3);
     body.alpha = 0.5;
-    label.setScale(0.3);
-    label.alpha = 0;
+    hpText.setScale(0.85);
     hpText.alpha = 0;
     this.tweens.add({
-      targets: [body, label, hpText],
+      targets: [body, hpText],
       scale: 1,
       alpha: 1,
       duration: 230,
       ease: 'Back.Out',
     });
+  }
+
+  private drawUnitModel(g: Phaser.GameObjects.Graphics, unit: Unit, fill: number, stroke: number) {
+    const r = unit.radius;
+    const top = tintColor(fill, 1.2);
+    const side = tintColor(stroke, 0.85);
+    const metal = unit.team === 'player' ? 0xb7d9ff : 0xffb0ba;
+
+    g.clear();
+    g.lineStyle(1.5, stroke, 1);
+    g.fillStyle(side, 0.95);
+    g.fillEllipse(2, 5, r * 1.85, r * 1.05);
+
+    switch (unit.type) {
+      case 'warrior':
+        g.fillStyle(fill, 1);
+        g.fillRoundedRect(-r * 0.65, -r * 0.55, r * 1.3, r * 1.05, 4);
+        g.strokeRoundedRect(-r * 0.65, -r * 0.55, r * 1.3, r * 1.05, 4);
+        g.fillStyle(metal, 1);
+        g.fillCircle(0, -r * 0.55, r * 0.48);
+        g.fillStyle(0xf5d07a, 1);
+        g.fillCircle(-r * 0.55, -1, r * 0.33);
+        g.lineStyle(2, 0xe7ecf3, 1);
+        g.lineBetween(r * 0.42, -r * 0.2, r * 0.98, -r * 0.95);
+        break;
+      case 'archer':
+        g.fillStyle(top, 1);
+        g.fillTriangle(0, -r * 1.12, -r * 0.78, r * 0.35, r * 0.78, r * 0.35);
+        g.strokeTriangle(0, -r * 1.12, -r * 0.78, r * 0.35, r * 0.78, r * 0.35);
+        g.fillStyle(fill, 1);
+        g.fillRoundedRect(-r * 0.5, -r * 0.18, r, r * 0.74, 4);
+        g.lineStyle(2, 0xd9b87a, 1);
+        g.beginPath();
+        g.arc(r * 0.7, -r * 0.16, r * 0.62, -1.2, 1.2);
+        g.strokePath();
+        g.lineStyle(1, 0xf7edc9, 0.9);
+        g.lineBetween(r * 0.55, -r * 0.7, r * 0.55, r * 0.42);
+        break;
+      case 'tank':
+        g.fillStyle(side, 1);
+        g.fillRoundedRect(-r * 0.85, -r * 0.28, r * 1.85, r * 0.98, 5);
+        g.fillStyle(fill, 1);
+        g.fillRoundedRect(-r * 0.78, -r * 0.82, r * 1.55, r * 1.15, 5);
+        g.strokeRoundedRect(-r * 0.78, -r * 0.82, r * 1.55, r * 1.15, 5);
+        g.fillStyle(metal, 1);
+        g.fillRoundedRect(-r * 0.42, -r * 1.08, r * 0.84, r * 0.42, 3);
+        g.fillStyle(0x111720, 1);
+        g.fillRect(r * 0.18, -r * 0.9, r * 0.85, r * 0.16);
+        break;
+      case 'assassin':
+        g.fillStyle(0x151720, 1);
+        g.fillTriangle(0, -r * 1.08, -r * 0.88, r * 0.56, r * 0.88, r * 0.56);
+        g.strokeTriangle(0, -r * 1.08, -r * 0.88, r * 0.56, r * 0.88, r * 0.56);
+        g.fillStyle(top, 1);
+        g.fillCircle(0, -r * 0.42, r * 0.42);
+        g.lineStyle(2, 0xe7ecf3, 1);
+        g.lineBetween(-r * 0.55, -r * 0.1, -r * 1.03, r * 0.5);
+        g.lineBetween(r * 0.55, -r * 0.1, r * 1.03, r * 0.5);
+        break;
+      case 'squad':
+        for (const [dx, dy, s] of [
+          [-r * 0.42, -r * 0.18, 0.58],
+          [r * 0.4, -r * 0.12, 0.58],
+          [0, r * 0.28, 0.62],
+        ] as const) {
+          g.fillStyle(side, 0.9);
+          g.fillEllipse(dx + 1, dy + 3, r * s * 1.5, r * s * 0.9);
+          g.fillStyle(fill, 1);
+          g.fillCircle(dx, dy, r * s);
+          g.strokeCircle(dx, dy, r * s);
+          g.fillStyle(metal, 1);
+          g.fillCircle(dx - r * s * 0.22, dy - r * s * 0.3, r * s * 0.28);
+        }
+        break;
+      case 'mage':
+        g.fillStyle(top, 1);
+        g.fillTriangle(0, -r * 1.18, -r * 0.72, r * 0.48, r * 0.72, r * 0.48);
+        g.strokeTriangle(0, -r * 1.18, -r * 0.72, r * 0.48, r * 0.72, r * 0.48);
+        g.fillStyle(fill, 1);
+        g.fillCircle(0, -r * 0.18, r * 0.55);
+        g.fillStyle(0xb08fff, 0.95);
+        g.fillCircle(r * 0.68, -r * 0.78, r * 0.28);
+        g.lineStyle(2, 0xd9b87a, 1);
+        g.lineBetween(r * 0.42, -r * 0.28, r * 0.68, -r * 0.78);
+        break;
+    }
+
+    g.fillStyle(0xffffff, 0.18);
+    g.fillEllipse(-r * 0.22, -r * 0.55, r * 0.52, r * 0.28);
   }
 
   private updateUnitView(unit: Unit) {
@@ -977,11 +1058,12 @@ export class ArenaScene extends Phaser.Scene {
     view.shadow.y = unit.y;
     view.body.x = unit.x;
     view.body.y = unit.y - UNIT_LIFT + bob;
-    view.label.x = unit.x;
-    view.label.y = unit.y - UNIT_LIFT + bob;
     view.hpText.x = unit.x;
-    view.hpText.y = unit.y - unit.radius - UNIT_LIFT - 7 + bob;
-    view.hpText.setText(`${unit.hp}`);
+    view.hpText.y = unit.y - unit.radius - UNIT_LIFT - 8 + bob;
+    if (view.lastHp !== unit.hp) {
+      view.hpText.setText(`${unit.hp}`);
+      view.lastHp = unit.hp;
+    }
 
     const barW = unit.radius * 2;
     const barH = 2;
@@ -1014,14 +1096,13 @@ export class ArenaScene extends Phaser.Scene {
     const view = this.unitViews.get(unit.id);
     if (!view) return;
     this.tweens.add({
-      targets: [view.shadow, view.body, view.hpBar, view.label, view.hpText],
+      targets: [view.shadow, view.body, view.hpBar, view.hpText],
       alpha: 0,
       duration: 250,
       onComplete: () => {
         view.shadow.destroy();
         view.body.destroy();
         view.hpBar.destroy();
-        view.label.destroy();
         view.hpText.destroy();
         this.unitViews.delete(unit.id);
       },
@@ -1136,21 +1217,11 @@ export class ArenaScene extends Phaser.Scene {
 
 // ───── helpers ─────
 
-function typeGlyph(type: UnitType): string {
-  switch (type) {
-    case 'warrior':
-      return '⚔';
-    case 'archer':
-      return '🏹';
-    case 'tank':
-      return '🛡';
-    case 'assassin':
-      return '🗡';
-    case 'squad':
-      return '👥';
-    case 'mage':
-      return '🪄';
-  }
+function tintColor(color: number, factor: number): number {
+  const r = Math.max(0, Math.min(255, Math.round(((color >> 16) & 0xff) * factor)));
+  const g = Math.max(0, Math.min(255, Math.round(((color >> 8) & 0xff) * factor)));
+  const b = Math.max(0, Math.min(255, Math.round((color & 0xff) * factor)));
+  return (r << 16) | (g << 8) | b;
 }
 
 export function createGame(parent: HTMLElement): Phaser.Game {
@@ -1158,6 +1229,15 @@ export function createGame(parent: HTMLElement): Phaser.Game {
     type: Phaser.AUTO,
     parent,
     backgroundColor: '#0b0d12',
+    antialias: true,
+    pixelArt: false,
+    roundPixels: false,
+    resolution: RENDER_DPR,
+    render: {
+      antialias: true,
+      pixelArt: false,
+      roundPixels: false,
+    },
     scale: {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -1167,7 +1247,7 @@ export function createGame(parent: HTMLElement): Phaser.Game {
       height: SCENE_HEIGHT,
     },
     scene: [ArenaScene],
-  });
+  } as Phaser.Types.Core.GameConfig & { resolution: number });
 }
 
 /** Цвет тайла по типу. null значит «отрисуется отдельно» (вода/мост — в своих методах). */

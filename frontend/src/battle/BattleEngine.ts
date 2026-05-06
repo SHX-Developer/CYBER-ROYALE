@@ -50,6 +50,7 @@ import type {
 const RANGED_THRESHOLD = 80;
 const PROJECTILE_SPEED = 360; // px/sec
 const PROJECTILE_HIT_RADIUS = 10;
+const PURSUIT_REPATH_MS = 280;
 /** Жёсткий лимит юнитов на команду — для FPS на мобиле. */
 const MAX_UNITS_PER_TEAM = 20;
 
@@ -225,6 +226,7 @@ export class BattleEngine {
       this.resolveLockedTarget(unit) ?? pickTarget(unit, this.state.units, this.state.towers);
 
     if (!target) {
+      this.clearPursuitPath(unit);
       this.syncWaypointProgress(unit);
       if (unit.waypointIndex < unit.waypoints.length) {
         advanceUnitWaypoints(unit, dt);
@@ -257,9 +259,11 @@ export class BattleEngine {
     if (target.kind === 'unit') {
       this.moveUnitTowardTargetViaPath(unit, target.ref, dt);
     } else if (unit.waypointIndex < unit.waypoints.length) {
+      this.clearPursuitPath(unit);
       this.syncWaypointProgress(unit);
       advanceUnitWaypoints(unit, dt);
     } else {
+      this.clearPursuitPath(unit);
       moveUnitToward(unit, tc, dt);
     }
   }
@@ -290,15 +294,33 @@ export class BattleEngine {
   }
 
   private moveUnitTowardTargetViaPath(unit: Unit, target: Unit, dt: number) {
-    const path = findPath(cellFromPx(unit.x, unit.y), cellFromPx(target.x, target.y));
-    if (path.length === 0) {
+    if (
+      unit.pursuitTargetId !== target.id ||
+      this.state.timeMs >= unit.pursuitRepathAt ||
+      unit.pursuitWaypointIndex >= unit.pursuitWaypoints.length
+    ) {
+      const path = findPath(cellFromPx(unit.x, unit.y), cellFromPx(target.x, target.y));
+      unit.pursuitTargetId = target.id;
+      unit.pursuitRepathAt = this.state.timeMs + PURSUIT_REPATH_MS;
+      unit.pursuitWaypoints = pathToPixels(path);
+      unit.pursuitWaypointIndex = 0;
+    }
+
+    if (unit.pursuitWaypoints.length === 0) {
       this.syncWaypointProgress(unit);
       if (unit.waypointIndex < unit.waypoints.length) advanceUnitWaypoints(unit, dt);
       return;
     }
 
-    const [next] = pathToPixels(path);
+    const next = unit.pursuitWaypoints[unit.pursuitWaypointIndex];
     moveUnitToward(unit, next, dt);
+    if (Math.hypot(unit.x - next.x, unit.y - next.y) < 2) unit.pursuitWaypointIndex++;
+  }
+
+  private clearPursuitPath(unit: Unit) {
+    unit.pursuitTargetId = null;
+    unit.pursuitWaypoints = [];
+    unit.pursuitWaypointIndex = 0;
   }
 
   private syncWaypointProgress(unit: Unit) {

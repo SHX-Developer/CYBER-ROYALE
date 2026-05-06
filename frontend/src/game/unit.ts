@@ -120,6 +120,11 @@ export class Unit {
    *  из-за случайного врага рядом. */
   lockedTarget: { kind: 'unit' | 'tower'; id: string } | null = null;
 
+  pursuitTargetId: string | null = null;
+  pursuitRepathAt = Number.NEGATIVE_INFINITY;
+  pursuitWaypoints: Vec[] = [];
+  pursuitWaypointIndex = 0;
+
   readonly waypoints: Vec[];
   waypointIndex = 0;
 
