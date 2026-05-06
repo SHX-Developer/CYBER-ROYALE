@@ -107,6 +107,17 @@ curl http://localhost/api/health
 Frontend доступен на `http://SERVER_IP/`.
 API проксируется через nginx по пути `/api/*` на backend.
 
+### Dokploy с отдельной PostgreSQL Database
+
+Если база создана отдельным сервисом в Dokploy, используй compose path:
+
+```text
+docker-compose.dokploy.yml
+```
+
+В переменную `DATABASE_URL` вставь Internal Connection URL из Dokploy и добавь
+в конец `?schema=public`, если его там нет.
+
 ### Полезные команды
 
 ```bash

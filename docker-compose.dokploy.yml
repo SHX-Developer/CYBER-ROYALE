@@ -1,0 +1,25 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      DEV_AUTO_LOGIN: ${DEV_AUTO_LOGIN:-0}
+      PORT: 3000
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
+      RUN_SEED: ${RUN_SEED:-1}
+    ports:
+      - "${API_PORT:-3000}:3000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${WEB_PORT:-8080}:80"
