@@ -31,7 +31,7 @@ export default function ProfileBadge() {
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         <strong style={{ fontSize: 14 }}>{name}</strong>
         <small style={{ opacity: 0.7 }}>
-          ур. {profile.level} · {profile.coins}🪙 · {profile.gems}💎
+          ур. 1 · {profile.coins}🪙 · {profile.gems}💎
         </small>
       </div>
     </div>

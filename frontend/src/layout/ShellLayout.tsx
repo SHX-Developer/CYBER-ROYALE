@@ -27,10 +27,13 @@ const shell: React.CSSProperties = {
   height: '100%',
   display: 'flex',
   flexDirection: 'column',
+  background:
+    'radial-gradient(ellipse at 50% 0%, #2a1d4a 0%, #0b0d12 48%), #0b0d12',
 };
 
 const main: React.CSSProperties = {
   flex: 1,
   overflowY: 'auto',
   WebkitOverflowScrolling: 'touch',
+  paddingTop: 'max(18px, calc(env(safe-area-inset-top, 0px) + 14px))',
 };

@@ -16,6 +16,7 @@ import {
   BOTTOM_STAND_PX,
   BRIDGES,
   COLS,
+  LANES,
   PLAYER_FIRST_ROW,
   RIVER_BOTTOM_ROW,
   RIVER_TOP_ROW,
@@ -58,6 +59,7 @@ interface UnitView {
   body: Phaser.GameObjects.Graphics;
   hpBar: Phaser.GameObjects.Graphics;
   label: Phaser.GameObjects.Text;
+  hpText: Phaser.GameObjects.Text;
 }
 
 /** Высота «корпуса» над землёй — псевдо-3D. */
@@ -211,7 +213,7 @@ export class ArenaScene extends Phaser.Scene {
         this.attachUnitView(e.unit);
         break;
       case 'unitDamaged':
-        this.flashUnitDamage(e.unit);
+        this.flashUnitDamage(e.unit, e.amount);
         this.updateUnitView(e.unit);
         break;
       case 'unitHealed':
@@ -221,7 +223,6 @@ export class ArenaScene extends Phaser.Scene {
         this.handleUnitDeath(e.unit);
         break;
       case 'attack':
-        this.flashAttackLine(e.from, e.to);
         break;
       case 'towerDamaged':
         this.flashTowerDamage(e.tower);
@@ -492,8 +493,31 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private drawLanes() {
-    // Дорожки уже отрисованы внутри drawZones() по TILE_GRID.
-    // Здесь — только декор: камешки на road-клетках.
+    const road = this.wG();
+    road.fillStyle(ARENA_COLORS.lane, 1);
+    road.lineStyle(1, ARENA_COLORS.laneStroke, 0.65);
+    for (const lane of ['left', 'right'] as const) {
+      const x = LANES[lane].col * TILE + 5;
+      road.fillRoundedRect(x, 0, TILE - 10, RIVER_TOP_ROW * TILE, 9);
+      road.strokeRoundedRect(x, 0, TILE - 10, RIVER_TOP_ROW * TILE, 9);
+      road.fillRoundedRect(
+        x,
+        PLAYER_FIRST_ROW * TILE,
+        TILE - 10,
+        ARENA_HEIGHT - PLAYER_FIRST_ROW * TILE,
+        9,
+      );
+      road.strokeRoundedRect(
+        x,
+        PLAYER_FIRST_ROW * TILE,
+        TILE - 10,
+        ARENA_HEIGHT - PLAYER_FIRST_ROW * TILE,
+        9,
+      );
+    }
+    this.drawTowerRoadConnectors(road);
+
+    // Здесь — декор: камешки на road-клетках.
     const stones = this.wG();
     stones.fillStyle(0x000000, 0.18);
     const rng = mulberry32(7);
@@ -507,6 +531,33 @@ export class ArenaScene extends Phaser.Scene {
           stones.fillCircle(sx, sy, 1.4);
         }
       }
+    }
+  }
+
+  private drawTowerRoadConnectors(g: Phaser.GameObjects.Graphics) {
+    const connectorH = 18;
+    const leftLaneX = LANES.left.col * TILE + TILE / 2;
+    const rightLaneX = LANES.right.col * TILE + TILE / 2;
+    const leftTowerX = TILE;
+    const rightTowerX = ARENA_WIDTH - TILE;
+    const enemyPrincessY = 3 * TILE;
+    const playerPrincessY = (ROWS - 3) * TILE;
+
+    for (const y of [enemyPrincessY, playerPrincessY]) {
+      g.fillRoundedRect(
+        Math.min(leftTowerX, leftLaneX) - 6,
+        y - connectorH / 2,
+        Math.abs(leftLaneX - leftTowerX) + 12,
+        connectorH,
+        7,
+      );
+      g.fillRoundedRect(
+        Math.min(rightLaneX, rightTowerX) - 6,
+        y - connectorH / 2,
+        Math.abs(rightTowerX - rightLaneX) + 12,
+        connectorH,
+        7,
+      );
     }
   }
 
@@ -723,16 +774,39 @@ export class ArenaScene extends Phaser.Scene {
     rangeCircle.lineStyle(1, isPlayer ? ARENA_COLORS.playerTower : ARENA_COLORS.enemyTower, 0.1);
     rangeCircle.strokeCircle(tower.x, tower.y, tower.range);
 
-    const shadow = this.wG();
-    shadow.fillStyle(0x000000, 0.28);
-    shadow.fillEllipse(tower.x, r.y + r.h - 4, r.w * 0.62, 7);
-
     const pad = isKing ? 20 : 14;
     const body = this.wG();
+    const bx = r.x + pad;
+    const by = r.y + pad;
+    const bw = r.w - pad * 2;
+    const bh = r.h - pad * 2;
+    const depth = isKing ? 9 : 7;
+    body.fillStyle(stroke, 0.95);
+    body.fillPoints(
+      [
+        { x: bx + bw, y: by + depth },
+        { x: bx + bw + depth, y: by + depth * 0.35 },
+        { x: bx + bw + depth, y: by + bh + depth * 0.35 },
+        { x: bx + bw, y: by + bh + depth },
+      ],
+      true,
+    );
+    body.fillStyle(0x000000, 0.18);
+    body.fillPoints(
+      [
+        { x: bx + depth, y: by + bh },
+        { x: bx + bw, y: by + bh },
+        { x: bx + bw, y: by + bh + depth },
+        { x: bx, y: by + bh + depth },
+      ],
+      true,
+    );
     body.fillStyle(fill, 1);
     body.lineStyle(2, stroke, 1);
-    body.fillRoundedRect(r.x + pad, r.y + pad, r.w - pad * 2, r.h - pad * 2, 5);
-    body.strokeRoundedRect(r.x + pad, r.y + pad, r.w - pad * 2, r.h - pad * 2, 5);
+    body.fillRoundedRect(bx, by, bw, bh, 5);
+    body.strokeRoundedRect(bx, by, bw, bh, 5);
+    body.fillStyle(0xffffff, 0.16);
+    body.fillRoundedRect(bx + 4, by + 3, Math.max(4, bw - 8), Math.max(3, bh * 0.28), 4);
 
     // Маленький флажок на крыше башни.
     const flag = this.wG();
@@ -843,8 +917,10 @@ export class ArenaScene extends Phaser.Scene {
     shadow.x = unit.x;
     shadow.y = unit.y;
 
-    // Корпус — поднят над землёй на UNIT_LIFT, с белым highlight для объёма.
+    // Корпус — поднят над землёй на UNIT_LIFT, с боковой гранью для псевдо-3D.
     const body = this.wG();
+    body.fillStyle(stroke, 0.95);
+    body.fillEllipse(2, 4, unit.radius * 1.8, unit.radius * 1.2);
     body.fillStyle(fill, 1);
     body.lineStyle(2, stroke, 1);
     body.fillCircle(0, 0, unit.radius);
@@ -860,9 +936,16 @@ export class ArenaScene extends Phaser.Scene {
       color: '#ffffff',
     }).setOrigin(0.5);
 
+    const hpText = this.wT(unit.x, unit.y - UNIT_LIFT - unit.radius - 8, '', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '8px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+    }).setOrigin(0.5, 1);
+
     const hpBar = this.wG();
 
-    this.unitViews.set(unit.id, { shadow, body, hpBar, label });
+    this.unitViews.set(unit.id, { shadow, body, hpBar, label, hpText });
     this.updateUnitView(unit);
 
     // Spawn-in animation.
@@ -870,8 +953,9 @@ export class ArenaScene extends Phaser.Scene {
     body.alpha = 0.5;
     label.setScale(0.3);
     label.alpha = 0;
+    hpText.alpha = 0;
     this.tweens.add({
-      targets: [body, label],
+      targets: [body, label, hpText],
       scale: 1,
       alpha: 1,
       duration: 230,
@@ -895,6 +979,9 @@ export class ArenaScene extends Phaser.Scene {
     view.body.y = unit.y - UNIT_LIFT + bob;
     view.label.x = unit.x;
     view.label.y = unit.y - UNIT_LIFT + bob;
+    view.hpText.x = unit.x;
+    view.hpText.y = unit.y - unit.radius - UNIT_LIFT - 7 + bob;
+    view.hpText.setText(`${unit.hp}`);
 
     const barW = unit.radius * 2;
     const barH = 2;
@@ -910,12 +997,15 @@ export class ArenaScene extends Phaser.Scene {
     bar.fillRect(barX, barY, Math.max(0, barW * unit.hpRatio), barH);
   }
 
-  private flashUnitDamage(unit: Unit) {
+  private flashUnitDamage(unit: Unit, amount: number) {
     const view = this.unitViews.get(unit.id);
-    if (!view || unit.isDead) return;
+    if (!view) return;
     this.tweens.killTweensOf(view.body);
-    view.body.alpha = 0.4;
-    this.tweens.add({ targets: view.body, alpha: 1, duration: 130 });
+    if (!unit.isDead) {
+      view.body.alpha = 0.4;
+      this.tweens.add({ targets: view.body, alpha: 1, duration: 130 });
+    }
+    this.floatDamageNumber(unit.x, unit.y - unit.radius - UNIT_LIFT - 10, amount);
   }
 
   private handleUnitDeath(unit: Unit) {
@@ -924,7 +1014,7 @@ export class ArenaScene extends Phaser.Scene {
     const view = this.unitViews.get(unit.id);
     if (!view) return;
     this.tweens.add({
-      targets: [view.shadow, view.body, view.hpBar, view.label],
+      targets: [view.shadow, view.body, view.hpBar, view.label, view.hpText],
       alpha: 0,
       duration: 250,
       onComplete: () => {
@@ -932,8 +1022,28 @@ export class ArenaScene extends Phaser.Scene {
         view.body.destroy();
         view.hpBar.destroy();
         view.label.destroy();
+        view.hpText.destroy();
         this.unitViews.delete(unit.id);
       },
+    });
+  }
+
+  private floatDamageNumber(x: number, y: number, amount: number) {
+    const txt = this.wT(x, y, `-${Math.round(amount)}`, {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '12px',
+      color: '#ffd267',
+      fontStyle: 'bold',
+      stroke: '#2a1208',
+      strokeThickness: 2,
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets: txt,
+      y: y - 18,
+      alpha: 0,
+      duration: 650,
+      ease: 'Quad.Out',
+      onComplete: () => txt.destroy(),
     });
   }
 
@@ -947,18 +1057,6 @@ export class ArenaScene extends Phaser.Scene {
       alpha: 0,
       duration: 380,
       onComplete: () => g.destroy(),
-    });
-  }
-
-  private flashAttackLine(from: { x: number; y: number }, to: { x: number; y: number }) {
-    const line = this.wG();
-    line.lineStyle(2, 0xffffff, 0.8);
-    line.lineBetween(from.x, from.y, to.x, to.y);
-    this.tweens.add({
-      targets: line,
-      alpha: 0,
-      duration: 220,
-      onComplete: () => line.destroy(),
     });
   }
 

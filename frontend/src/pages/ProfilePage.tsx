@@ -44,7 +44,7 @@ export default function ProfilePage() {
         </div>
 
         <div style={statsGrid}>
-          <Stat label="Уровень" value={String(profile.level)} />
+          <Stat label="Уровень" value="1" />
           <Stat label="Опыт" value={`✨ ${profile.xp}`} />
           <Stat label="Монеты" value={`🪙 ${profile.coins}`} />
           <Stat label="Гемы" value={`💎 ${profile.gems}`} />

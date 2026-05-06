@@ -35,17 +35,19 @@ export function pickTarget(
 ): AttackTarget | null {
   const perception = unit.range + PERCEPTION_BONUS;
 
-  let bestUnit: Unit | null = null;
-  let bestUnitDist = Infinity;
-  for (const other of units) {
-    if (other.team === unit.team || other.isDead) continue;
-    const d = Math.hypot(unit.x - other.x, unit.y - other.y) - other.radius;
-    if (d <= perception && d < bestUnitDist) {
-      bestUnit = other;
-      bestUnitDist = d;
+  if (unit.type !== 'tank') {
+    let bestUnit: Unit | null = null;
+    let bestUnitDist = Infinity;
+    for (const other of units) {
+      if (other.team === unit.team || other.isDead) continue;
+      const d = Math.hypot(unit.x - other.x, unit.y - other.y) - other.radius;
+      if (d <= perception && d < bestUnitDist) {
+        bestUnit = other;
+        bestUnitDist = d;
+      }
     }
+    if (bestUnit) return { kind: 'unit', ref: bestUnit };
   }
-  if (bestUnit) return { kind: 'unit', ref: bestUnit };
 
   let bestPrincess: Tower | null = null;
   let bestPrincessDist = Infinity;

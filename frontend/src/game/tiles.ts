@@ -22,8 +22,8 @@ const PRINCESS_W = 2;
 const PRINCESS_H = 2;
 const KING_W = 3;
 const KING_H = 3;
-const BRIDGE_COLS = new Set([1, 6]);
-const LANE_COLS = new Set([1, 6]);
+const BRIDGE_COLS = new Set([1, 7]);
+const LANE_COLS = new Set([1, 7]);
 
 function deriveTileType(col: number, row: number): TileType {
   // Король врага — верх-центр

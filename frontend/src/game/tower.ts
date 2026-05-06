@@ -19,7 +19,7 @@ export interface TowerStats {
 /** ТЗ Этапа 7. Для удобного балансинга позже — собрано в одном месте. */
 export const TOWER_STATS: Record<TowerType, TowerStats> = {
   king: { maxHp: 3000, damage: 80, range: 160, attackSpeed: 1 },
-  princess: { maxHp: 1800, damage: 60, range: 150, attackSpeed: 1 },
+  princess: { maxHp: 1800, damage: 60, range: 225, attackSpeed: 1 },
 };
 
 export interface TowerInit {

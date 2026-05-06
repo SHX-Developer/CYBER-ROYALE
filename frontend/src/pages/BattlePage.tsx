@@ -98,15 +98,15 @@ function TopBar() {
   return (
     <div style={topBar}>
       <Badge>
-        <span style={{ color: '#7fb9ff' }}>★ {td.enemy}</span>
-        <span style={{ opacity: 0.4, margin: '0 6px' }}>:</span>
-        <span style={{ color: '#ff8585' }}>{td.player} ★</span>
-      </Badge>
-      <Badge>
         <span style={{ opacity: 0.7 }}>⏱</span>
         <span style={{ marginLeft: 6, fontVariantNumeric: 'tabular-nums' }}>
           {formatTime(timeLeft)}
         </span>
+      </Badge>
+      <Badge>
+        <span style={{ color: '#7fb9ff' }}>★ {td.enemy}</span>
+        <span style={{ opacity: 0.4, margin: '0 6px' }}>:</span>
+        <span style={{ color: '#ff8585' }}>{td.player} ★</span>
       </Badge>
     </div>
   );
@@ -297,7 +297,7 @@ const canvasWrap: React.CSSProperties = {
 
 const backBtn: React.CSSProperties = {
   position: 'absolute',
-  top: 8,
+  top: 'max(8px, calc(env(safe-area-inset-top, 0px) + 8px))',
   left: 8,
   width: 32,
   height: 32,
@@ -314,12 +314,13 @@ const backBtn: React.CSSProperties = {
 
 const topBar: React.CSSProperties = {
   position: 'absolute',
-  top: 10,
-  left: 48,
-  right: 10,
+  top: 'max(10px, calc(env(safe-area-inset-top, 0px) + 8px))',
+  left: '50%',
+  transform: 'translateX(-50%)',
   display: 'flex',
-  justifyContent: 'space-between',
-  gap: 6,
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: 5,
   zIndex: 10,
 };
 
@@ -333,6 +334,7 @@ const badge: React.CSSProperties = {
   fontWeight: 700,
   display: 'inline-flex',
   alignItems: 'center',
+  whiteSpace: 'nowrap',
 };
 
 const hudWrap: React.CSSProperties = {

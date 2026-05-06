@@ -19,7 +19,7 @@ export default function Header() {
               <strong style={nameStyle}>
                 {profile.firstName ?? profile.username ?? `id${profile.telegramId}`}
               </strong>
-              <span style={levelStyle}>уровень {profile.level}</span>
+              <span style={levelStyle}>уровень 1</span>
             </div>
           </>
         ) : (

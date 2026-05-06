@@ -11,7 +11,7 @@
  *
  * Линии движения (lanes):
  *   left  — col 1 (ось x = 1.5 тайла)
- *   right — col 6 (ось x = 6.5 тайла)
+ *   right — col 7 (ось x = 7.5 тайла)
  *
  * Мосты пересекают реку по этим линиям.
  */
@@ -25,7 +25,7 @@ export const ARENA_HEIGHT = ROWS * TILE; // 720 — игровая высота 
 // Декоративные «трибуны» сверху и снизу — не часть игрового мира,
 // просто арт, чтобы убрать чёрные рамки letterbox-а у Phaser FIT.
 export const TOP_STAND_PX = 56;
-export const BOTTOM_STAND_PX = 44;
+export const BOTTOM_STAND_PX = 132;
 export const SCENE_HEIGHT = TOP_STAND_PX + ARENA_HEIGHT + BOTTOM_STAND_PX;
 
 export const RIVER_TOP_ROW = 8;
@@ -55,7 +55,7 @@ export interface RectInTiles {
 
 export const LANES: Record<Lane, { col: number }> = {
   left: { col: 1 }, // тайл 1 (центр оси на 1.5)
-  right: { col: 6 }, // тайл 6 (центр оси на 6.5)
+  right: { col: 7 }, // тайл 7 (центр оси на 7.5)
 };
 
 /**
@@ -67,11 +67,11 @@ export const LANES: Record<Lane, { col: number }> = {
  * подцепит вражеские башни и юниты.
  *
  * Координаты заточены под арену 360×720, lane.left.col=1 (x=60),
- * lane.right.col=6 (x=260). Мосты на этих же x пересекают реку,
+ * lane.right.col=7 (x=300). Мосты на этих же x пересекают реку,
  * поэтому путь — прямая линия x=const.
  */
 const LEFT_X = LANES.left.col * TILE + TILE / 2; // 60
-const RIGHT_X = LANES.right.col * TILE + TILE / 2; // 260
+const RIGHT_X = LANES.right.col * TILE + TILE / 2; // 300
 const NEAR_BRIDGE_PLAYER = (RIVER_BOTTOM_ROW + 1) * TILE + TILE / 2; // 420 — после моста
 const NEAR_BRIDGE_ENEMY = RIVER_TOP_ROW * TILE - TILE / 2; // 300 — перед мостом снизу для врага
 const FRONT_PLAYER_HALF = (PLAYER_FIRST_ROW + 2) * TILE + TILE / 2; // ~500 — фронт игрока

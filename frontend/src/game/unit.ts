@@ -37,7 +37,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     maxHp: 250,
     damage: 60,
     attackSpeed: 1,
-    range: 200,
+    range: 125,
     moveSpeed: 60,
     target: 'any',
     radius: 12,
@@ -115,6 +115,10 @@ export class Unit {
   state: UnitState = 'idle';
   /** Время последней атаки в мс scene-time; -∞ → первый удар сразу при сближении. */
   lastAttackAt = Number.NEGATIVE_INFINITY;
+
+  /** Цель, которую юнит уже начал атаковать. Нужна, чтобы не бросать башню
+   *  из-за случайного врага рядом. */
+  lockedTarget: { kind: 'unit' | 'tower'; id: string } | null = null;
 
   readonly waypoints: Vec[];
   waypointIndex = 0;

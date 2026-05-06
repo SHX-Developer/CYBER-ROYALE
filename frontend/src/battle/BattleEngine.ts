@@ -154,6 +154,7 @@ export class BattleEngine {
     let bestDist = Infinity;
     for (const u of this.state.units) {
       if (u.isDead || u.team === tower.team) continue;
+      if (tower.lane && u.lane !== tower.lane) continue;
       const d = Math.hypot(u.x - tower.x, u.y - tower.y);
       if (d <= tower.range && d < bestDist) {
         best = u;
@@ -220,9 +221,11 @@ export class BattleEngine {
   }
 
   private tickUnit(unit: Unit, dt: number) {
-    const target = pickTarget(unit, this.state.units, this.state.towers);
+    const target =
+      this.resolveLockedTarget(unit) ?? pickTarget(unit, this.state.units, this.state.towers);
 
     if (!target) {
+      this.syncWaypointProgress(unit);
       if (unit.waypointIndex < unit.waypoints.length) {
         advanceUnitWaypoints(unit, dt);
         unit.state = 'moving';
@@ -243,24 +246,69 @@ export class BattleEngine {
       unit.state = 'attacking';
       const cooldownMs = unit.attackSpeed * 1000;
       if (this.state.timeMs - unit.lastAttackAt >= cooldownMs) {
+        unit.lockedTarget = { kind: target.kind, id: target.ref.id };
         this.applyAttack(unit, target.kind === 'unit' ? target.ref : null, target.kind === 'tower' ? target.ref : null);
         unit.lastAttackAt = this.state.timeMs;
-        this.emit({
-          kind: 'attack',
-          from: { x: unit.x, y: unit.y },
-          to: { x: tc.x, y: tc.y },
-        });
       }
       return;
     }
 
     unit.state = 'moving';
     if (target.kind === 'unit') {
-      moveUnitToward(unit, tc, dt);
+      this.moveUnitTowardTargetViaPath(unit, target.ref, dt);
     } else if (unit.waypointIndex < unit.waypoints.length) {
+      this.syncWaypointProgress(unit);
       advanceUnitWaypoints(unit, dt);
     } else {
       moveUnitToward(unit, tc, dt);
+    }
+  }
+
+  private resolveLockedTarget(unit: Unit): ReturnType<typeof pickTarget> {
+    const lock = unit.lockedTarget;
+    if (!lock) return null;
+
+    if (lock.kind === 'unit') {
+      if (unit.type === 'tank') {
+        unit.lockedTarget = null;
+        return null;
+      }
+      const target = this.state.units.find((u) => u.id === lock.id);
+      if (!target || target.isDead || target.team === unit.team) {
+        unit.lockedTarget = null;
+        return null;
+      }
+      return { kind: 'unit', ref: target };
+    }
+
+    const target = this.state.towers.find((t) => t.id === lock.id);
+    if (!target || target.isDestroyed || target.team === unit.team) {
+      unit.lockedTarget = null;
+      return null;
+    }
+    return { kind: 'tower', ref: target };
+  }
+
+  private moveUnitTowardTargetViaPath(unit: Unit, target: Unit, dt: number) {
+    const path = findPath(cellFromPx(unit.x, unit.y), cellFromPx(target.x, target.y));
+    if (path.length === 0) {
+      this.syncWaypointProgress(unit);
+      if (unit.waypointIndex < unit.waypoints.length) advanceUnitWaypoints(unit, dt);
+      return;
+    }
+
+    const [next] = pathToPixels(path);
+    moveUnitToward(unit, next, dt);
+  }
+
+  private syncWaypointProgress(unit: Unit) {
+    while (unit.waypointIndex + 1 < unit.waypoints.length) {
+      const cur = unit.waypoints[unit.waypointIndex];
+      const next = unit.waypoints[unit.waypointIndex + 1];
+      const curDist = Math.hypot(unit.x - cur.x, unit.y - cur.y);
+      const nextDist = Math.hypot(unit.x - next.x, unit.y - next.y);
+      if (nextDist > curDist + 2) break;
+      unit.waypointIndex++;
     }
   }
 
@@ -455,8 +503,15 @@ export const ARENA = { width: ARENA_WIDTH, height: ARENA_HEIGHT };
 function pickPrincessCell(team: Side, lane: Lane): Cell {
   if (team === 'player') {
     // Игрок идёт к ВЕРХНИМ принцессам.
-    return lane === 'left' ? { col: 0, row: 2 } : { col: COLS - 1, row: 2 };
+    return lane === 'left' ? { col: 1, row: 3 } : { col: COLS - 2, row: 3 };
   }
   // Враг идёт к НИЖНИМ принцессам.
-  return lane === 'left' ? { col: 0, row: ROWS - 4 } : { col: COLS - 1, row: ROWS - 4 };
+  return lane === 'left' ? { col: 1, row: ROWS - 4 } : { col: COLS - 2, row: ROWS - 4 };
+}
+
+function cellFromPx(x: number, y: number): Cell {
+  return {
+    col: Math.max(0, Math.min(COLS - 1, Math.floor(x / TILE))),
+    row: Math.max(0, Math.min(ROWS - 1, Math.floor(y / TILE))),
+  };
 }

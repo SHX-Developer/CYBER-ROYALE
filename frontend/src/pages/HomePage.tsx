@@ -26,7 +26,7 @@ export default function HomePage() {
       </div>
 
       <div style={statsRow}>
-        <Stat label="Уровень" value={String(profile?.level ?? 1)} />
+        <Stat label="Уровень" value="1" />
         <Stat label="Бои" value={String(profile?.battlesCount ?? 0)} />
         <Stat label="Винрейт" value={`${winRate}%`} />
       </div>
@@ -61,7 +61,7 @@ function ProfileChip() {
         <strong style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {name}
         </strong>
-        <small style={{ opacity: 0.6, fontSize: 11 }}>ур. {profile.level}</small>
+        <small style={{ opacity: 0.6, fontSize: 11 }}>ур. 1</small>
       </div>
     </div>
   );
