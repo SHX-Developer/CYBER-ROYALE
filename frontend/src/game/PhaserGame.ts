@@ -150,25 +150,8 @@ export class ArenaScene extends Phaser.Scene {
     // Подписываемся на события движка для визуала + зеркаление в стор.
     this.engineUnsub = this.engine.on((e) => this.handleEngineEvent(e));
 
-    // Регэн энергии игрока.
-    this.playerEnergyTimer = this.time.addEvent({
-      delay: ENERGY_REGEN_INTERVAL_MS,
-      loop: true,
-      callback: () => {
-        if (this.engine.state.outcome) return;
-        this.engine.addEnergy('player', 1);
-      },
-    });
-
-    // Регэн энергии бота.
-    this.botEnergyTimer = this.time.addEvent({
-      delay: ENERGY_REGEN_INTERVAL_MS,
-      loop: true,
-      callback: () => {
-        if (this.engine.state.outcome) return;
-        this.engine.addEnergy('enemy', 1);
-      },
-    });
+    // Регэн энергии — плавный, рассчитывается каждый кадр в update().
+    // Старые таймеры оставлены ради совместимости полей класса (см. shutdown).
 
     // Запуск AI бота.
     this.scheduleBotTick();
@@ -187,6 +170,12 @@ export class ArenaScene extends Phaser.Scene {
 
   override update(_time: number, deltaMs: number) {
     if (this.engine.state.outcome) return;
+    // Плавный регэн: 1 эликсир каждые ENERGY_REGEN_INTERVAL_MS, дробно за кадр.
+    const regenPerSec = 1000 / ENERGY_REGEN_INTERVAL_MS; // эликсиров в секунду
+    const dEnergy = (regenPerSec * deltaMs) / 1000;
+    this.engine.addEnergy('player', dEnergy);
+    this.engine.addEnergy('enemy', dEnergy);
+
     this.engine.tick(deltaMs);
     // Синхронизируем визуал юнитов с актуальным состоянием.
     for (const u of this.engine.state.units) {
@@ -248,6 +237,13 @@ export class ArenaScene extends Phaser.Scene {
           playSound('meleeHit');
         }
         break;
+      case 'towerAttack':
+        // Анимация лучницы на принцессе + звук тетивы.
+        if (e.tower.type === 'princess') {
+          this.threeLayer?.towerAttackAnim(e.tower.id);
+          playSound('rangedShoot');
+        }
+        break;
       case 'towerDamaged':
         this.flashTowerDamage(e.tower);
         this.updateTowerHud(e.tower);
@@ -260,7 +256,7 @@ export class ArenaScene extends Phaser.Scene {
         playSound('towerDestroy');
         break;
       case 'spellCast':
-        this.renderSpellEffect(e.code, e.x, e.y);
+        this.renderSpellEffect(e.code, e.x, e.y, e.sourceX, e.sourceY);
         playSound(e.code === 'fireball' ? 'fireballCast' : 'healCast');
         break;
       case 'projectileSpawned':
@@ -480,6 +476,8 @@ export class ArenaScene extends Phaser.Scene {
 
     this.playerEnergyTimer?.remove();
     this.botEnergyTimer?.remove();
+    this.playerEnergyTimer = undefined;
+    this.botEnergyTimer = undefined;
   }
 
   // ───── визуал: статика арены ─────
@@ -534,13 +532,9 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   /**
-   * Дороги, ведущие именно к башням.
-   *
-   * Башни-принцессы стоят колонками 0-1 (левая) и 7-8 (правая),
-   * центры на x=40 / x=320. Линии движения юнитов идут по col=1 (x≈60)
-   * и col=7 (x≈300). Получаем чёткую дорогу от верха арены к верхушке
-   * принцессы, изгиб к её центру и продолжение к мосту — и зеркально
-   * с нижней половины. Дорога теперь не пропадает за 3D-моделью башни.
+   * Дороги — простые вертикали по обеим линиям (lane col=1 / col=7).
+   * Принцессы теперь стоят на той же оси, поэтому достаточно прямой дороги
+   * через всю арену — никаких изгибов, ничего не пропадает за 3D-моделью.
    */
   private drawLanes() {
     const road = this.wG();
@@ -548,57 +542,18 @@ export class ArenaScene extends Phaser.Scene {
     road.lineStyle(1, ARENA_COLORS.laneStroke, 0.65);
 
     const laneW = TILE - 10;
-    const ePrincessTopY = 2 * TILE; // 80
-    const ePrincessBotY = 4 * TILE; // 160
-    const ePrincessCenterX = (col: number) => col * TILE + TILE; // x=40 / x=320
-    const pPrincessTopY = (ROWS - 4) * TILE; // 560
-    const pPrincessBotY = (ROWS - 2) * TILE; // 640
     const bridgeTopY = RIVER_TOP_ROW * TILE; // 320
     const bridgeBotY = (RIVER_BOTTOM_ROW + 1) * TILE; // 400
     const arenaH = ARENA_HEIGHT;
 
     for (const lane of ['left', 'right'] as const) {
-      const laneCol = LANES[lane].col;
-      const laneCenterX = laneCol * TILE + TILE / 2;
-      const laneRectX = laneCol * TILE + 5;
-      // Левая принцесса — col 0..1, центр x=40 (cols 0+1).
-      // Правая принцесса — col 7..8, центр x=320 (cols 7+1).
-      const isLeft = lane === 'left';
-      const princessOuterCol = isLeft ? 0 : COLS - 2;
-      const princessCenterX = ePrincessCenterX(princessOuterCol);
-
-      // ────── Верхняя половина (вражеский тыл → принцесса → мост) ──────
-      // Дорога от верхнего края арены до верха принцессы (по lane col).
-      road.fillRoundedRect(laneRectX, 0, laneW, ePrincessTopY + 4, 8);
-      road.strokeRoundedRect(laneRectX, 0, laneW, ePrincessTopY + 4, 8);
-      // Изгиб «через» принцессу по её центральному столбцу.
-      const upperX = Math.min(laneRectX, princessCenterX - laneW / 2);
-      const upperW = Math.max(laneRectX + laneW, princessCenterX + laneW / 2) - upperX;
-      road.fillRoundedRect(upperX, ePrincessTopY + 2, upperW, ePrincessBotY - ePrincessTopY - 4, 8);
-      road.strokeRoundedRect(upperX, ePrincessTopY + 2, upperW, ePrincessBotY - ePrincessTopY - 4, 8);
-      // Дорога от низа принцессы до моста.
-      road.fillRoundedRect(laneRectX, ePrincessBotY - 4, laneW, bridgeTopY - ePrincessBotY + 4, 8);
-      road.strokeRoundedRect(laneRectX, ePrincessBotY - 4, laneW, bridgeTopY - ePrincessBotY + 4, 8);
-
-      // ────── Нижняя половина (мост → принцесса игрока → спавн) ──────
-      // От моста до верха принцессы игрока.
-      road.fillRoundedRect(laneRectX, bridgeBotY - 4, laneW, pPrincessTopY - bridgeBotY + 4, 8);
-      road.strokeRoundedRect(laneRectX, bridgeBotY - 4, laneW, pPrincessTopY - bridgeBotY + 4, 8);
-      // Через принцессу игрока.
-      const lowerX = Math.min(laneRectX, princessCenterX - laneW / 2);
-      const lowerW = Math.max(laneRectX + laneW, princessCenterX + laneW / 2) - lowerX;
-      road.fillRoundedRect(lowerX, pPrincessTopY + 2, lowerW, pPrincessBotY - pPrincessTopY - 4, 8);
-      road.strokeRoundedRect(lowerX, pPrincessTopY + 2, lowerW, pPrincessBotY - pPrincessTopY - 4, 8);
-      // От низа принцессы игрока до края арены.
-      road.fillRoundedRect(laneRectX, pPrincessBotY - 4, laneW, arenaH - pPrincessBotY + 4, 8);
-      road.strokeRoundedRect(laneRectX, pPrincessBotY - 4, laneW, arenaH - pPrincessBotY + 4, 8);
-
-      // Лёгкая «ступенька» — небольшой круг на месте излома.
-      road.fillStyle(ARENA_COLORS.lane, 1);
-      road.fillCircle(princessCenterX, ePrincessBotY, 6);
-      road.fillCircle(princessCenterX, pPrincessTopY, 6);
-      road.fillCircle(laneCenterX, ePrincessTopY, 6);
-      road.fillCircle(laneCenterX, pPrincessBotY, 6);
+      const laneRectX = LANES[lane].col * TILE + 5;
+      // Верхняя половина — от края арены до моста.
+      road.fillRoundedRect(laneRectX, 0, laneW, bridgeTopY, 9);
+      road.strokeRoundedRect(laneRectX, 0, laneW, bridgeTopY, 9);
+      // Нижняя половина — от моста до края арены.
+      road.fillRoundedRect(laneRectX, bridgeBotY, laneW, arenaH - bridgeBotY, 9);
+      road.strokeRoundedRect(laneRectX, bridgeBotY, laneW, arenaH - bridgeBotY, 9);
     }
 
     // Декор: камешки на дороге.
@@ -1180,26 +1135,38 @@ export class ArenaScene extends Phaser.Scene {
 
   // ───── визуал: спеллы ─────
 
-  private renderSpellEffect(code: SpellCode, x: number, y: number) {
+  private renderSpellEffect(
+    code: SpellCode,
+    x: number,
+    y: number,
+    sourceX: number,
+    sourceY: number,
+  ) {
     const stats = SPELL_STATS[code];
 
-    // Лёгкий 2D-марк для контекста (оставляем под 3D для контраста).
-    const fillGfx = this.wG();
-    fillGfx.fillStyle(stats.color, 0.18);
-    fillGfx.fillCircle(0, 0, stats.radius);
-    fillGfx.x = x;
-    fillGfx.y = y;
-    this.tweens.add({
-      targets: fillGfx,
-      alpha: 0,
-      duration: 600,
-      onComplete: () => fillGfx.destroy(),
-    });
+    if (code === 'fireball') {
+      // 3D — фаербол летит с башни короля и взрывается на цели.
+      this.threeLayer?.castFireball(sourceX, sourceY, x, y);
+      // Земля под целью трясётся в момент взрыва.
+      this.time.delayedCall(680, () => this.cameras.main.shake(220, 0.006));
+    } else {
+      // 3D — зелье падает в точку и оставляет 3-сек зону.
+      this.threeLayer?.castHealPotion(x, y, 3000);
 
-    // Основной 3D-эффект — Фаербол / Лечение через ThreeBattleLayer.
-    this.threeLayer?.castSpellEffect(code, x, y);
-
-    if (stats.hostile) this.cameras.main.shake(220, 0.005);
+      // 2D-«мягкий» индикатор зоны лечения на земле.
+      const ringFill = this.wG();
+      ringFill.fillStyle(stats.color, 0.08);
+      ringFill.fillCircle(0, 0, stats.radius);
+      ringFill.x = x;
+      ringFill.y = y;
+      this.tweens.add({
+        targets: ringFill,
+        alpha: 0,
+        duration: 3000,
+        ease: 'Linear',
+        onComplete: () => ringFill.destroy(),
+      });
+    }
   }
 }
 

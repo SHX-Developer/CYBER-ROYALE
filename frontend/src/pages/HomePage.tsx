@@ -109,7 +109,7 @@ const page: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 18,
-  padding: '14px 16px 24px',
+  padding: '15px 16px 24px',
   minHeight: '100%',
   background:
     'radial-gradient(ellipse at 50% -10%, #2a1d4a 0%, #0b0d12 55%), linear-gradient(180deg, #0b0d12 0%, #0b0d12 100%)',

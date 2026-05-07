@@ -47,7 +47,7 @@ export default function BattleHomePage() {
 const page: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
-  padding: '14px 16px 16px',
+  padding: '15px 16px 16px',
   gap: 14,
 };
 

@@ -16,10 +16,13 @@ export interface TowerStats {
   attackSpeed: number; // секунд между атаками
 }
 
-/** ТЗ Этапа 7. Для удобного балансинга позже — собрано в одном месте. */
+/**
+ * ТЗ Этапа 7. Для удобного балансинга позже — собрано в одном месте.
+ * Принцессы стреляют быстрее — на их платформе стоит лучница.
+ */
 export const TOWER_STATS: Record<TowerType, TowerStats> = {
   king: { maxHp: 3000, damage: 80, range: 160, attackSpeed: 1 },
-  princess: { maxHp: 1800, damage: 60, range: 225, attackSpeed: 1 },
+  princess: { maxHp: 1800, damage: 55, range: 225, attackSpeed: 0.55 },
 };
 
 export interface TowerInit {
@@ -60,7 +63,12 @@ export class Tower {
     this.type = init.type;
     this.lane = init.lane;
     this.rect = init.rect;
-    this.x = r.cx;
+
+    // Lane-offset: визуально и по логике сдвигаем боковые принцессы так,
+    // чтобы они стояли по оси дорожки (lane), а не у внешнего края арены.
+    // Левая принцесса смещается вправо на ~20px, правая — влево на 20px.
+    const laneOffsetX = init.lane === 'left' ? 20 : init.lane === 'right' ? -20 : 0;
+    this.x = r.cx + laneOffsetX;
     this.y = r.cy;
 
     this.hp = stats.maxHp;

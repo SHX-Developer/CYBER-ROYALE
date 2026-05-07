@@ -90,7 +90,8 @@ export default function BattlePage() {
 
       <MuteButton />
 
-      <TopBar />
+      {/* TopBar (таймер + звёзды) временно скрыт по запросу. */}
+      {/* <TopBar /> */}
 
       <div style={hudWrap}>
         <EnergyBar />
@@ -120,51 +121,62 @@ function MuteButton() {
   );
 }
 
-function TopBar() {
-  const td = useBattleStore((s) => s.towersDestroyed);
-  const timeLeft = useBattleStore((s) => s.matchTimeLeftMs);
-  return (
-    <>
-      {/* Звёзды — верхний левый угол (рядом с back-кнопкой). */}
-      <div style={starsCorner}>
-        <Badge>
-          <span style={{ color: '#7fb9ff' }}>★ {td.player}</span>
-          <span style={{ opacity: 0.4, margin: '0 6px' }}>:</span>
-          <span style={{ color: '#ff8585' }}>{td.enemy} ★</span>
-        </Badge>
-      </div>
-      {/* Время — верхний правый угол. */}
-      <div style={timeCorner}>
-        <Badge>
-          <span style={{ opacity: 0.7 }}>⏱</span>
-          <span style={{ marginLeft: 6, fontVariantNumeric: 'tabular-nums' }}>
-            {formatTime(timeLeft)}
-          </span>
-        </Badge>
-      </div>
-    </>
-  );
-}
+// TopBar (таймер + звёзды) временно отключён. Сохранено для возврата позже —
+// если расскоментируете <TopBar /> выше и эту функцию, всё снова заработает.
+// function TopBar() {
+//   const td = useBattleStore((s) => s.towersDestroyed);
+//   const timeLeft = useBattleStore((s) => s.matchTimeLeftMs);
+//   return (
+//     <>
+//       <div style={starsCorner}>
+//         <Badge>
+//           <span style={{ color: '#7fb9ff' }}>★ {td.player}</span>
+//           <span style={{ opacity: 0.4, margin: '0 6px' }}>:</span>
+//           <span style={{ color: '#ff8585' }}>{td.enemy} ★</span>
+//         </Badge>
+//       </div>
+//       <div style={timeCorner}>
+//         <Badge>
+//           <span style={{ opacity: 0.7 }}>⏱</span>
+//           <span style={{ marginLeft: 6, fontVariantNumeric: 'tabular-nums' }}>
+//             {formatTime(timeLeft)}
+//           </span>
+//         </Badge>
+//       </div>
+//     </>
+//   );
+// }
 
-function Badge({ children }: { children: React.ReactNode }) {
-  return <div style={badge}>{children}</div>;
-}
+// Badge временно скрыт вместе с TopBar.
+// function Badge({ children }: { children: React.ReactNode }) {
+//   return <div style={badge}>{children}</div>;
+// }
 
 function EnergyBar() {
   const energy = useBattleStore((s) => s.energy);
   const pulse = useBattleStore((s) => s.insufficientPulse);
+  // Полоса разбита на 10 ячеек. Каждая ячейка показывает «свою» долю
+  // энергии: ячейка i заполняется по мере того как energy идёт от i до i+1.
+  const cells = Array.from({ length: MAX_ENERGY }, (_, i) =>
+    Math.max(0, Math.min(1, energy - i)),
+  );
   return (
-    <div style={energyOuter} key={pulse}>
-      <div
-        style={{
-          ...energyFill,
-          width: `${(energy / MAX_ENERGY) * 100}%`,
-        }}
-      />
-      <div style={energyText}>
-        <EnergyIcon size={11} />
-        <span style={{ marginLeft: 4 }}>
-          {Math.floor(energy)} / {MAX_ENERGY}
+    <div style={energySegmentRow} key={pulse}>
+      {cells.map((fill, i) => (
+        <div key={i} style={energySegmentOuter}>
+          <div
+            style={{
+              ...energySegmentFill,
+              transform: `scaleX(${fill})`,
+              opacity: fill === 0 ? 0.25 : 1,
+            }}
+          />
+        </div>
+      ))}
+      <div style={energySegmentLabel}>
+        <EnergyIcon size={10} />
+        <span style={{ marginLeft: 3, fontVariantNumeric: 'tabular-nums' }}>
+          {Math.floor(energy)}
         </span>
       </div>
     </div>
@@ -361,27 +373,11 @@ const backBtn: React.CSSProperties = {
   zIndex: 10,
 };
 
-// Звёзды — верхний левый угол, чуть правее back-кнопки.
-const starsCorner: React.CSSProperties = {
-  position: 'absolute',
-  top: 'max(15px, calc(env(safe-area-inset-top, 0px) + 15px))',
-  left: 48,
-  zIndex: 10,
-};
-
-// Время — верхний правый угол.
-const timeCorner: React.CSSProperties = {
-  position: 'absolute',
-  top: 'max(15px, calc(env(safe-area-inset-top, 0px) + 15px))',
-  right: 8,
-  zIndex: 10,
-};
-
-// Кнопка mute — рядом с временем.
+// Кнопка mute — верхний правый угол.
 const muteBtn: React.CSSProperties = {
   position: 'absolute',
   top: 'max(15px, calc(env(safe-area-inset-top, 0px) + 15px))',
-  right: 'calc(8px + 84px)', // оставляем место для бейджа времени
+  right: 8,
   width: 32,
   height: 32,
   borderRadius: 10,
@@ -395,18 +391,7 @@ const muteBtn: React.CSSProperties = {
   zIndex: 10,
 };
 
-const badge: React.CSSProperties = {
-  padding: '4px 9px',
-  borderRadius: 999,
-  background: 'rgba(11,13,18,0.65)',
-  border: '1px solid rgba(255,255,255,0.12)',
-  color: '#e7ecf3',
-  fontSize: 11,
-  fontWeight: 700,
-  display: 'inline-flex',
-  alignItems: 'center',
-  whiteSpace: 'nowrap',
-};
+// const badge: React.CSSProperties = { /* стиль скрытого Badge */ };
 
 const hudWrap: React.CSSProperties = {
   position: 'absolute',
@@ -420,37 +405,51 @@ const hudWrap: React.CSSProperties = {
   zIndex: 10,
 };
 
-const energyOuter: React.CSSProperties = {
+// Эликсир — 10 отдельных ячеек, каждая плавно заполняется по своей доле.
+const energySegmentRow: React.CSSProperties = {
   position: 'relative',
+  display: 'grid',
+  gridTemplateColumns: 'repeat(10, 1fr)',
+  gap: 2,
   width: '100%',
   height: 14,
-  borderRadius: 999,
+  padding: '2px 30px 2px 2px',
+  borderRadius: 8,
   background: 'rgba(11,13,18,0.65)',
   border: '1px solid rgba(255,255,255,0.12)',
-  overflow: 'hidden',
   boxShadow: '0 0 8px rgba(124, 92, 255, 0.18) inset',
+  boxSizing: 'border-box',
 };
 
-const energyFill: React.CSSProperties = {
-  position: 'absolute',
-  left: 0,
-  top: 0,
-  bottom: 0,
-  background: 'linear-gradient(90deg, #c8b0ff 0%, #7c5cff 60%, #5b3dd0 100%)',
-  transition: 'width 200ms linear',
-  boxShadow: '0 0 10px rgba(124, 92, 255, 0.55)',
+const energySegmentOuter: React.CSSProperties = {
+  position: 'relative',
+  height: '100%',
+  borderRadius: 3,
+  background: 'rgba(255,255,255,0.04)',
+  border: '1px solid rgba(255,255,255,0.06)',
+  overflow: 'hidden',
 };
 
-const energyText: React.CSSProperties = {
+const energySegmentFill: React.CSSProperties = {
   position: 'absolute',
   inset: 0,
+  background: 'linear-gradient(90deg, #c8b0ff 0%, #7c5cff 60%, #5b3dd0 100%)',
+  transformOrigin: 'left center',
+  transition: 'transform 120ms linear, opacity 120ms linear',
+  boxShadow: '0 0 6px rgba(124, 92, 255, 0.55)',
+};
+
+const energySegmentLabel: React.CSSProperties = {
+  position: 'absolute',
+  right: 6,
+  top: '50%',
+  transform: 'translateY(-50%)',
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'center',
   fontSize: 9,
-  fontWeight: 700,
+  fontWeight: 800,
   color: '#ffffff',
-  letterSpacing: 0.5,
+  textShadow: '0 1px 2px rgba(0,0,0,0.6)',
 };
 
 const hand4plusNext: React.CSSProperties = {

@@ -35,6 +35,27 @@ export interface Projectile {
   kind: 'arrow' | 'magic';
 }
 
+/** Зона лечения — действует N миллисекунд, тикает периодически. */
+export interface HealZone {
+  id: string;
+  team: Side;
+  x: number;
+  y: number;
+  radius: number;
+  endsAt: number;
+  nextTickAt: number;
+  tickInterval: number;
+  healPerTick: number;
+}
+
+/** Отложенное применение фаербола — урон срабатывает по приземлении. */
+export interface PendingFireball {
+  team: Side;
+  x: number;
+  y: number;
+  applyAt: number;
+}
+
 export interface BattleEngineState {
   units: Unit[];
   towers: Tower[];
@@ -47,6 +68,10 @@ export interface BattleEngineState {
   matchDurationMs: number;
   /** Закончился ли матч. */
   outcome: BattleOutcome | null;
+  /** Активные зоны лечения. */
+  healZones: HealZone[];
+  /** Отложенный урон фаерболами (ждёт окончания полёта). */
+  pendingFireballs: PendingFireball[];
 }
 
 /** Команды, которыми внешний слой управляет движком. */
@@ -69,7 +94,17 @@ export type BattleEvent =
     }
   | { kind: 'towerDamaged'; tower: Tower; amount: number }
   | { kind: 'towerDestroyed'; tower: Tower }
-  | { kind: 'spellCast'; code: SpellCode; x: number; y: number; team: Side }
+  | { kind: 'towerAttack'; tower: Tower }
+  | {
+      kind: 'spellCast';
+      code: SpellCode;
+      x: number;
+      y: number;
+      team: Side;
+      /** Источник для анимации (центр короля каста). */
+      sourceX: number;
+      sourceY: number;
+    }
   | { kind: 'projectileSpawned'; projectile: Projectile }
   | { kind: 'projectileHit'; projectile: Projectile }
   | { kind: 'energyChanged'; team: Side; value: number }

@@ -43,6 +43,8 @@ import type {
   BattleEvent,
   BattleListener,
   BattleOutcome,
+  HealZone,
+  PendingFireball,
   Projectile,
 } from './types';
 
@@ -53,6 +55,14 @@ const PROJECTILE_HIT_RADIUS = 10;
 const PURSUIT_REPATH_MS = 280;
 /** Жёсткий лимит юнитов на команду — для FPS на мобиле. */
 const MAX_UNITS_PER_TEAM = 20;
+/** Полёт фаербола в анимации — должно совпадать с ThreeBattleLayer. */
+const FIREBALL_FLIGHT_MS = 680;
+/** Длительность зоны лечения — 3 секунды. */
+const HEAL_ZONE_DURATION_MS = 3000;
+/** Интервал тика лечения внутри зоны (~ 8 тиков за 3 сек). */
+const HEAL_ZONE_TICK_MS = 360;
+/** Сколько HP заживает за один тик зоны (totalImpact / numTicks). */
+const HEAL_PER_TICK = 35;
 
 export interface SpawnUnitParams {
   team: Side;
@@ -75,6 +85,7 @@ export class BattleEngine {
   private listeners: BattleListener[] = [];
   private nextUnitId = 1;
   private nextProjectileId = 1;
+  private nextHealZoneId = 1;
 
   constructor() {
     this.state = {
@@ -86,6 +97,8 @@ export class BattleEngine {
       timeMs: 0,
       matchDurationMs: MATCH_DURATION_MS,
       outcome: null,
+      healZones: [],
+      pendingFireballs: [],
     };
   }
 
@@ -117,6 +130,8 @@ export class BattleEngine {
 
     this.tickTowers(dt);
     this.tickProjectiles(dt);
+    this.tickPendingFireballs();
+    this.tickHealZones();
 
     if (this.state.timeMs >= this.state.matchDurationMs) {
       this.handleTimeout();
@@ -137,6 +152,11 @@ export class BattleEngine {
       if (this.state.timeMs - tower.lastAttackAt < cooldownMs) continue;
       tower.lastAttackAt = this.state.timeMs;
 
+      // На принцессе сидит лучница — она стреляет стрелой.
+      // Король — магической пушкой.
+      const projKind: 'arrow' | 'magic' = tower.type === 'princess' ? 'arrow' : 'magic';
+
+      this.emit({ kind: 'towerAttack', tower });
       this.spawnProjectile({
         team: tower.team,
         x: tower.x,
@@ -145,7 +165,7 @@ export class BattleEngine {
         targetUnitId: target.id,
         fallbackX: target.x,
         fallbackY: target.y,
-        kind: 'magic',
+        kind: projKind,
       });
     }
   }
@@ -510,34 +530,100 @@ export class BattleEngine {
 
   castSpell(params: CastSpellParams) {
     const { code, x, y, team } = params;
-    const stats = SPELL_STATS[code];
-    this.emit({ kind: 'spellCast', code, x, y, team });
+    const source = this.findKingTowerCenter(team);
+    this.emit({
+      kind: 'spellCast',
+      code,
+      x,
+      y,
+      team,
+      sourceX: source.x,
+      sourceY: source.y,
+    });
 
-    if (stats.hostile) {
+    if (code === 'fireball') {
+      // Урон отложен — синхронизируется с приземлением фаербола в анимации.
+      this.state.pendingFireballs.push({
+        team,
+        x,
+        y,
+        applyAt: this.state.timeMs + FIREBALL_FLIGHT_MS,
+      });
+    } else {
+      // heal — создаём 3-секундную зону лечения.
+      this.state.healZones.push({
+        id: `hz${this.nextHealZoneId++}`,
+        team,
+        x,
+        y,
+        radius: SPELL_STATS.heal.radius,
+        endsAt: this.state.timeMs + HEAL_ZONE_DURATION_MS,
+        // Первый тик — после падения зелья (~600мс), чтобы совпадало с
+        // визуальным разбиванием бутыли.
+        nextTickAt: this.state.timeMs + 600,
+        tickInterval: HEAL_ZONE_TICK_MS,
+        healPerTick: HEAL_PER_TICK,
+      });
+    }
+  }
+
+  /** Применяет отложенный урон фаерболов, чьё время полёта истекло. */
+  private tickPendingFireballs() {
+    if (this.state.pendingFireballs.length === 0) return;
+    const remaining: PendingFireball[] = [];
+    for (const f of this.state.pendingFireballs) {
+      if (f.applyAt > this.state.timeMs) {
+        remaining.push(f);
+        continue;
+      }
+      const stats = SPELL_STATS.fireball;
       for (const u of this.state.units) {
-        if (u.isDead || u.team === team) continue;
-        const d = Math.hypot(u.x - x, u.y - y);
+        if (u.isDead || u.team === f.team) continue;
+        const d = Math.hypot(u.x - f.x, u.y - f.y);
         if (d <= stats.radius) this.damageUnit(u, stats.unitImpact);
       }
       if (stats.towerImpact > 0) {
         for (const t of this.state.towers) {
-          if (t.isDestroyed || t.team === team) continue;
+          if (t.isDestroyed || t.team === f.team) continue;
           const half = towerHalfSize(t);
-          const d = Math.hypot(t.x - x, t.y - y) - half;
+          const d = Math.hypot(t.x - f.x, t.y - f.y) - half;
           if (d <= stats.radius) this.damageTower(t, stats.towerImpact);
         }
       }
-    } else {
-      // heal
-      for (const u of this.state.units) {
-        if (u.isDead || u.team !== team) continue;
-        const d = Math.hypot(u.x - x, u.y - y);
-        if (d <= stats.radius) {
-          u.heal(stats.unitImpact);
-          this.emit({ kind: 'unitHealed', unit: u, amount: stats.unitImpact });
-        }
-      }
     }
+    this.state.pendingFireballs = remaining;
+  }
+
+  /** Лечит союзников внутри зон, удаляет истёкшие зоны. */
+  private tickHealZones() {
+    if (this.state.healZones.length === 0) return;
+    const survivors: HealZone[] = [];
+    for (const z of this.state.healZones) {
+      while (this.state.timeMs >= z.nextTickAt && z.nextTickAt <= z.endsAt) {
+        for (const u of this.state.units) {
+          if (u.isDead || u.team !== z.team) continue;
+          if (u.hp >= u.maxHp) continue;
+          const d = Math.hypot(u.x - z.x, u.y - z.y);
+          if (d <= z.radius) {
+            u.heal(z.healPerTick);
+            this.emit({ kind: 'unitHealed', unit: u, amount: z.healPerTick });
+          }
+        }
+        z.nextTickAt += z.tickInterval;
+      }
+      if (this.state.timeMs < z.endsAt) survivors.push(z);
+    }
+    this.state.healZones = survivors;
+  }
+
+  /** Центр короля-башни команды (для запуска визуала фаербола). */
+  private findKingTowerCenter(team: Side): { x: number; y: number } {
+    const king = this.state.towers.find((t) => t.team === team && t.type === 'king');
+    if (king) return { x: king.x, y: king.y };
+    // Fallback — центр стороны арены.
+    return team === 'player'
+      ? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT - 60 }
+      : { x: ARENA_WIDTH / 2, y: 60 };
   }
 
   // ───── финал матча ─────
