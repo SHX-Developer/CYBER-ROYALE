@@ -1,5 +1,6 @@
 import { useUiStore } from '@/store/uiStore';
 import { useUserStore } from '@/store/userStore';
+import { playSound } from '@/audio/soundEngine';
 
 export default function HomePage() {
   const setScreen = useUiStore((s) => s.setScreen);
@@ -32,14 +33,23 @@ export default function HomePage() {
       </div>
 
       <button
-        onClick={() => setScreen('arena')}
+        onClick={() => {
+          playSound('buttonClick');
+          setScreen('arena');
+        }}
         disabled={!isAuthed}
         style={{ ...playBtn, opacity: isAuthed ? 1 : 0.5 }}
       >
         ИГРАТЬ
       </button>
 
-      <button onClick={() => setScreen('collection')} style={secondaryBtn}>
+      <button
+        onClick={() => {
+          playSound('buttonClick');
+          setScreen('collection');
+        }}
+        style={secondaryBtn}
+      >
         📚 Открыть коллекцию
       </button>
     </div>

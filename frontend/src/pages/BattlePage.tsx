@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type Phaser from 'phaser';
 import { createGame, getArenaScene } from '@/game/PhaserGame';
 import { useUiStore } from '@/store/uiStore';
 import { useUserStore } from '@/store/userStore';
 import { reportBattle } from '@/api/battles';
 import EnergyIcon from '@/components/EnergyIcon';
+import { playSound, soundEngine } from '@/audio/soundEngine';
 import {
   CARDS,
   HAND_SIZE,
@@ -76,9 +77,18 @@ export default function BattlePage() {
       <div ref={containerRef} className="arena-tilt" style={canvasWrap} />
       <div className="arena-fog" />
 
-      <button onClick={() => setScreen('home')} style={backBtn} aria-label="Выйти из боя">
+      <button
+        onClick={() => {
+          playSound('buttonClick');
+          setScreen('home');
+        }}
+        style={backBtn}
+        aria-label="Выйти из боя"
+      >
         ←
       </button>
+
+      <MuteButton />
 
       <TopBar />
 
@@ -89,6 +99,24 @@ export default function BattlePage() {
 
       <ResultOverlay onExit={() => setScreen('home')} onPlayAgain={playAgain} />
     </div>
+  );
+}
+
+function MuteButton() {
+  const [muted, setMuted] = useState(soundEngine.isMuted());
+  return (
+    <button
+      onClick={() => {
+        const next = soundEngine.toggleMute();
+        setMuted(next);
+        if (!next) playSound('buttonClick');
+      }}
+      style={muteBtn}
+      aria-label={muted ? 'Включить звук' : 'Выключить звук'}
+      title={muted ? 'Включить звук' : 'Выключить звук'}
+    >
+      {muted ? '🔇' : '🔊'}
+    </button>
   );
 }
 
@@ -171,10 +199,16 @@ function CardSlotButton({ card }: { card: CardDef }) {
   const onClick = () => {
     if (!canAfford) {
       pulse();
+      playSound('insufficient');
       return;
     }
-    if (isSelected) clear();
-    else select(card.code);
+    if (isSelected) {
+      clear();
+      playSound('buttonClick');
+    } else {
+      select(card.code);
+      playSound('cardSelect');
+    }
   };
 
   const isSpell = card.kind === 'spell';
@@ -252,11 +286,20 @@ function ResultOverlay({
         )}
 
         <div style={{ display: 'flex', gap: 8, width: '100%' }}>
-          <button onClick={onPlayAgain} style={{ ...overlayBtn, background: accent, flex: 1 }}>
+          <button
+            onClick={() => {
+              playSound('buttonClick');
+              onPlayAgain();
+            }}
+            style={{ ...overlayBtn, background: accent, flex: 1 }}
+          >
             Играть снова
           </button>
           <button
-            onClick={onExit}
+            onClick={() => {
+              playSound('buttonClick');
+              onExit();
+            }}
             style={{
               ...overlayBtn,
               background: '#0f1320',
@@ -331,6 +374,24 @@ const timeCorner: React.CSSProperties = {
   position: 'absolute',
   top: 'max(15px, calc(env(safe-area-inset-top, 0px) + 15px))',
   right: 8,
+  zIndex: 10,
+};
+
+// Кнопка mute — рядом с временем.
+const muteBtn: React.CSSProperties = {
+  position: 'absolute',
+  top: 'max(15px, calc(env(safe-area-inset-top, 0px) + 15px))',
+  right: 'calc(8px + 84px)', // оставляем место для бейджа времени
+  width: 32,
+  height: 32,
+  borderRadius: 10,
+  border: '1px solid rgba(255,255,255,0.15)',
+  background: 'rgba(11,13,18,0.65)',
+  backdropFilter: 'blur(6px)',
+  WebkitBackdropFilter: 'blur(6px)',
+  color: '#e7ecf3',
+  fontSize: 14,
+  cursor: 'pointer',
   zIndex: 10,
 };
 

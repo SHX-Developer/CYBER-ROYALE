@@ -43,6 +43,7 @@ import {
   type MatchResult,
 } from '@/store/battleStore';
 import { BattleEngine } from '@/battle/BattleEngine';
+import { playSound } from '@/audio/soundEngine';
 
 interface TowerView {
   body: Phaser.GameObjects.Graphics;
@@ -172,6 +173,10 @@ export class ArenaScene extends Phaser.Scene {
     // Запуск AI бота.
     this.scheduleBotTick();
 
+    // Фанфары начала матча (с маленькой задержкой, чтобы дать AudioContext
+    // проснуться после user-gesture в меню).
+    this.time.delayedCall(140, () => playSound('matchStart'));
+
     this.events.once('shutdown', () => {
       this.zoneUnsub?.();
       this.engineUnsub?.();
@@ -222,6 +227,7 @@ export class ArenaScene extends Phaser.Scene {
     switch (e.kind) {
       case 'unitSpawned':
         this.attachUnitView(e.unit);
+        playSound('unitSpawn');
         break;
       case 'unitDamaged':
         this.flashUnitDamage(e.unit, e.amount);
@@ -232,27 +238,37 @@ export class ArenaScene extends Phaser.Scene {
         break;
       case 'unitDied':
         this.handleUnitDeath(e.unit);
+        playSound('unitDeath');
         break;
       case 'attack':
         this.renderAttackEffect(e);
+        if (e.ranged) {
+          playSound(e.attacker.type === 'mage' ? 'magicShoot' : 'rangedShoot');
+        } else {
+          playSound('meleeHit');
+        }
         break;
       case 'towerDamaged':
         this.flashTowerDamage(e.tower);
         this.updateTowerHud(e.tower);
+        playSound('towerHit');
         break;
       case 'towerDestroyed':
         this.handleTowerDestroyed(e.tower);
         store.setTowersDestroyed('player', this.engine.state.towersDestroyed.player);
         store.setTowersDestroyed('enemy', this.engine.state.towersDestroyed.enemy);
+        playSound('towerDestroy');
         break;
       case 'spellCast':
         this.renderSpellEffect(e.code, e.x, e.y);
+        playSound(e.code === 'fireball' ? 'fireballCast' : 'healCast');
         break;
       case 'projectileSpawned':
         this.attachProjectileView(e.projectile);
         break;
       case 'projectileHit':
         this.handleProjectileHit(e.projectile);
+        playSound('projectileHit');
         break;
       case 'energyChanged':
         if (e.team === 'player') store.setEnergy(e.value);
@@ -262,6 +278,13 @@ export class ArenaScene extends Phaser.Scene {
         break;
       case 'gameOver':
         this.finalizeMatch(e.outcome);
+        playSound(
+          e.outcome === 'won'
+            ? 'matchVictory'
+            : e.outcome === 'lost'
+              ? 'matchDefeat'
+              : 'matchDraw',
+        );
         break;
     }
   }
@@ -282,13 +305,16 @@ export class ArenaScene extends Phaser.Scene {
 
     if (!this.isValidPlacement(code, x, y)) {
       store.pulseInsufficient();
+      playSound('insufficient');
       return;
     }
     if (!this.engine.spendEnergy('player', card.energyCost)) {
       store.pulseInsufficient();
+      playSound('insufficient');
       return;
     }
     store.cycleCard(code);
+    playSound('cardPlace');
 
     if (card.kind === 'spell') {
       this.engine.castSpell({ team: 'player', code: code as SpellCode, x, y });

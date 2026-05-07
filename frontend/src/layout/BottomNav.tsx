@@ -1,4 +1,5 @@
 import { useUiStore, type Screen } from '@/store/uiStore';
+import { playSound } from '@/audio/soundEngine';
 
 interface Tab {
   id: Screen;
@@ -25,7 +26,10 @@ export default function BottomNav() {
         return (
           <button
             key={t.id}
-            onClick={() => setScreen(t.id)}
+            onClick={() => {
+              if (!active) playSound('tabSwitch');
+              setScreen(t.id);
+            }}
             style={{
               ...tab,
               color: active ? '#ffd267' : '#9ba1b0',

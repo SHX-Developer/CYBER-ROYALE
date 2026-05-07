@@ -1,5 +1,6 @@
 import { useUiStore } from '@/store/uiStore';
 import { useUserStore } from '@/store/userStore';
+import { playSound } from '@/audio/soundEngine';
 
 export default function BattleHomePage() {
   const setScreen = useUiStore((s) => s.setScreen);
@@ -18,7 +19,10 @@ export default function BattleHomePage() {
           Тренировочная арена 1 на 1. 3 минуты, 8 карт, цель — снести вражеского короля.
         </p>
         <button
-          onClick={() => setScreen('arena')}
+          onClick={() => {
+            playSound('buttonClick');
+            setScreen('arena');
+          }}
           disabled={!isAuthed}
           style={{ ...primaryBtn, opacity: isAuthed ? 1 : 0.5 }}
         >
