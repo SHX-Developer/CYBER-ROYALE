@@ -32,6 +32,7 @@ import { TILE_GRID, isPlaceableForPlayer } from './tiles';
 import { Tower } from './tower';
 import { Unit, UNIT_STATS, type UnitType } from './unit';
 import { SPELL_STATS, type SpellCode } from './spells';
+import { ThreeBattleLayer } from './ThreeBattleLayer';
 import {
   CARDS,
   ENERGY_REGEN_INTERVAL_MS,
@@ -53,9 +54,8 @@ interface TowerView {
 }
 
 interface UnitView {
-  /** Тёмный эллипс на земле — даёт ощущение объёма. */
+  /** Невидимый Phaser-объект для совместимости с текущими tween-хуками. */
   shadow: Phaser.GameObjects.Graphics;
-  /** Векторная псевдо-3D модель юнита. */
   body: Phaser.GameObjects.Graphics;
   hpBar: Phaser.GameObjects.Graphics;
   hpText: Phaser.GameObjects.Text;
@@ -76,6 +76,7 @@ export class ArenaScene extends Phaser.Scene {
    *  чтобы трибуны помещались сверху и снизу за пределами игрового мира. */
   private world!: Phaser.GameObjects.Container;
   private waterWaves?: Phaser.GameObjects.Graphics;
+  private threeLayer?: ThreeBattleLayer;
 
   private towerViews = new Map<string, TowerView>();
   private unitViews = new Map<string, UnitView>();
@@ -116,6 +117,8 @@ export class ArenaScene extends Phaser.Scene {
     // Все объекты арены ездят внутри world-контейнера, сдвинутого на
     // TOP_STAND_PX вниз. Логические координаты остаются в 0..720.
     this.world = this.add.container(0, TOP_STAND_PX);
+    const parent = this.game.canvas.parentElement;
+    if (parent) this.threeLayer = new ThreeBattleLayer(parent, this.game.canvas);
 
     this.drawZones();
     this.drawLanes();
@@ -127,6 +130,7 @@ export class ArenaScene extends Phaser.Scene {
     this.startWaterAnimation();
 
     for (const t of this.engine.state.towers) this.attachTowerView(t);
+    this.threeLayer?.sync(this.engine.state.units, this.engine.state.towers);
 
     this.zoneGfx = this.add.graphics();
     this.zoneGfx.setDepth(50);
@@ -171,6 +175,8 @@ export class ArenaScene extends Phaser.Scene {
     this.events.once('shutdown', () => {
       this.zoneUnsub?.();
       this.engineUnsub?.();
+      this.threeLayer?.dispose();
+      this.threeLayer = undefined;
     });
   }
 
@@ -206,6 +212,7 @@ export class ArenaScene extends Phaser.Scene {
         view.turret.rotation = Math.atan2(target.y - tower.y, target.x - tower.x);
       }
     }
+    this.threeLayer?.sync(this.engine.state.units, this.engine.state.towers);
   }
 
   // ───── обработка событий движка ─────
@@ -760,88 +767,13 @@ export class ArenaScene extends Phaser.Scene {
     const isKing = tower.type === 'king';
     const isPlayer = tower.team === 'player';
 
-    const fill = isPlayer
-      ? isKing
-        ? ARENA_COLORS.playerKingTower
-        : ARENA_COLORS.playerTower
-      : isKing
-        ? ARENA_COLORS.enemyKingTower
-        : ARENA_COLORS.enemyTower;
-    const stroke = isPlayer
-      ? isKing
-        ? ARENA_COLORS.playerKingEdge
-        : ARENA_COLORS.playerTowerEdge
-      : isKing
-        ? ARENA_COLORS.enemyKingEdge
-        : ARENA_COLORS.enemyTowerEdge;
-
     const rangeCircle = this.wG();
     rangeCircle.lineStyle(1, isPlayer ? ARENA_COLORS.playerTower : ARENA_COLORS.enemyTower, 0.1);
     rangeCircle.strokeCircle(tower.x, tower.y, tower.range);
 
     const pad = isKing ? 20 : 14;
-    const body = this.wG();
-    const bx = r.x + pad;
-    const by = r.y + pad;
-    const bw = r.w - pad * 2;
-    const bh = r.h - pad * 2;
-    const depth = isKing ? 9 : 7;
-    body.fillStyle(stroke, 0.95);
-    body.fillPoints(
-      [
-        { x: bx + bw, y: by + depth },
-        { x: bx + bw + depth, y: by + depth * 0.35 },
-        { x: bx + bw + depth, y: by + bh + depth * 0.35 },
-        { x: bx + bw, y: by + bh + depth },
-      ],
-      true,
-    );
-    body.fillStyle(0x000000, 0.18);
-    body.fillPoints(
-      [
-        { x: bx + depth, y: by + bh },
-        { x: bx + bw, y: by + bh },
-        { x: bx + bw, y: by + bh + depth },
-        { x: bx, y: by + bh + depth },
-      ],
-      true,
-    );
-    body.fillStyle(fill, 1);
-    body.lineStyle(2, stroke, 1);
-    body.fillRoundedRect(bx, by, bw, bh, 5);
-    body.strokeRoundedRect(bx, by, bw, bh, 5);
-    body.fillStyle(0xffffff, 0.16);
-    body.fillRoundedRect(bx + 4, by + 3, Math.max(4, bw - 8), Math.max(3, bh * 0.28), 4);
-
-    // Маленький флажок на крыше башни.
-    const flag = this.wG();
-    const flagColor = isPlayer ? 0x6ec0ff : 0xff8a99;
-    flag.fillStyle(0x6b5a3a, 1);
-    flag.fillRect(tower.x - 0.5, r.y + pad - 8, 1, 8);
-    flag.fillStyle(flagColor, 1);
-    flag.fillTriangle(
-      tower.x,
-      r.y + pad - 8,
-      tower.x + 6,
-      r.y + pad - 6,
-      tower.x,
-      r.y + pad - 4,
-    );
-
-    if (isKing) {
-      const crown = this.wG();
-      crown.fillStyle(0xf2c14e, 1);
-      crown.fillCircle(tower.x, tower.y - 1, 5);
-    }
-
-    // Турель сверху корпуса — короткая «пушка», поворачивается к цели.
-    const turret = this.wG();
-    const turretLen = isKing ? 14 : 11;
-    const turretWidth = 4;
-    turret.fillStyle(0x111720, 1);
-    turret.fillRect(0, -turretWidth / 2, turretLen, turretWidth);
-    turret.lineStyle(1, 0xffffff, 0.18);
-    turret.strokeRect(0, -turretWidth / 2, turretLen, turretWidth);
+    const body = this.wG().setVisible(false);
+    const turret = this.wG().setVisible(false);
     turret.x = tower.x;
     turret.y = tower.y;
 
@@ -883,6 +815,7 @@ export class ArenaScene extends Phaser.Scene {
   private flashTowerDamage(tower: Tower) {
     const view = this.towerViews.get(tower.id);
     if (!view || tower.isDestroyed) return;
+    this.threeLayer?.flashTower(tower.id);
     this.tweens.killTweensOf(view.body);
     view.body.alpha = 0.5;
     this.tweens.add({ targets: view.body, alpha: 1, duration: 130 });
@@ -906,24 +839,17 @@ export class ArenaScene extends Phaser.Scene {
     this.tweens.add({ targets: view.body, alpha: 0.3, duration: 350 });
     view.rangeCircle.setAlpha(0);
     view.hpText.setText('×');
+    this.threeLayer?.destroyTower(tower.id);
   }
 
   // ───── визуал: юниты ─────
 
   private attachUnitView(unit: Unit) {
-    const isPlayer = unit.team === 'player';
-    const fill = isPlayer ? ARENA_COLORS.playerTower : ARENA_COLORS.enemyTower;
-    const stroke = isPlayer ? ARENA_COLORS.playerTowerEdge : ARENA_COLORS.enemyTowerEdge;
-
-    // Тень на земле — сжатый эллипс.
-    const shadow = this.wG();
-    shadow.fillStyle(0x000000, 0.42);
-    shadow.fillEllipse(0, 0, unit.radius * 1.9, unit.radius * 0.7);
+    const shadow = this.wG().setVisible(false);
     shadow.x = unit.x;
     shadow.y = unit.y;
 
-    const body = this.wG();
-    this.drawUnitModel(body, unit, fill, stroke);
+    const body = this.wG().setVisible(false);
     body.x = unit.x;
     body.y = unit.y - UNIT_LIFT;
 
@@ -953,95 +879,6 @@ export class ArenaScene extends Phaser.Scene {
       duration: 230,
       ease: 'Back.Out',
     });
-  }
-
-  private drawUnitModel(g: Phaser.GameObjects.Graphics, unit: Unit, fill: number, stroke: number) {
-    const r = unit.radius;
-    const top = tintColor(fill, 1.2);
-    const side = tintColor(stroke, 0.85);
-    const metal = unit.team === 'player' ? 0xb7d9ff : 0xffb0ba;
-
-    g.clear();
-    g.lineStyle(1.5, stroke, 1);
-    g.fillStyle(side, 0.95);
-    g.fillEllipse(2, 5, r * 1.85, r * 1.05);
-
-    switch (unit.type) {
-      case 'warrior':
-        g.fillStyle(fill, 1);
-        g.fillRoundedRect(-r * 0.65, -r * 0.55, r * 1.3, r * 1.05, 4);
-        g.strokeRoundedRect(-r * 0.65, -r * 0.55, r * 1.3, r * 1.05, 4);
-        g.fillStyle(metal, 1);
-        g.fillCircle(0, -r * 0.55, r * 0.48);
-        g.fillStyle(0xf5d07a, 1);
-        g.fillCircle(-r * 0.55, -1, r * 0.33);
-        g.lineStyle(2, 0xe7ecf3, 1);
-        g.lineBetween(r * 0.42, -r * 0.2, r * 0.98, -r * 0.95);
-        break;
-      case 'archer':
-        g.fillStyle(top, 1);
-        g.fillTriangle(0, -r * 1.12, -r * 0.78, r * 0.35, r * 0.78, r * 0.35);
-        g.strokeTriangle(0, -r * 1.12, -r * 0.78, r * 0.35, r * 0.78, r * 0.35);
-        g.fillStyle(fill, 1);
-        g.fillRoundedRect(-r * 0.5, -r * 0.18, r, r * 0.74, 4);
-        g.lineStyle(2, 0xd9b87a, 1);
-        g.beginPath();
-        g.arc(r * 0.7, -r * 0.16, r * 0.62, -1.2, 1.2);
-        g.strokePath();
-        g.lineStyle(1, 0xf7edc9, 0.9);
-        g.lineBetween(r * 0.55, -r * 0.7, r * 0.55, r * 0.42);
-        break;
-      case 'tank':
-        g.fillStyle(side, 1);
-        g.fillRoundedRect(-r * 0.85, -r * 0.28, r * 1.85, r * 0.98, 5);
-        g.fillStyle(fill, 1);
-        g.fillRoundedRect(-r * 0.78, -r * 0.82, r * 1.55, r * 1.15, 5);
-        g.strokeRoundedRect(-r * 0.78, -r * 0.82, r * 1.55, r * 1.15, 5);
-        g.fillStyle(metal, 1);
-        g.fillRoundedRect(-r * 0.42, -r * 1.08, r * 0.84, r * 0.42, 3);
-        g.fillStyle(0x111720, 1);
-        g.fillRect(r * 0.18, -r * 0.9, r * 0.85, r * 0.16);
-        break;
-      case 'assassin':
-        g.fillStyle(0x151720, 1);
-        g.fillTriangle(0, -r * 1.08, -r * 0.88, r * 0.56, r * 0.88, r * 0.56);
-        g.strokeTriangle(0, -r * 1.08, -r * 0.88, r * 0.56, r * 0.88, r * 0.56);
-        g.fillStyle(top, 1);
-        g.fillCircle(0, -r * 0.42, r * 0.42);
-        g.lineStyle(2, 0xe7ecf3, 1);
-        g.lineBetween(-r * 0.55, -r * 0.1, -r * 1.03, r * 0.5);
-        g.lineBetween(r * 0.55, -r * 0.1, r * 1.03, r * 0.5);
-        break;
-      case 'squad':
-        for (const [dx, dy, s] of [
-          [-r * 0.42, -r * 0.18, 0.58],
-          [r * 0.4, -r * 0.12, 0.58],
-          [0, r * 0.28, 0.62],
-        ] as const) {
-          g.fillStyle(side, 0.9);
-          g.fillEllipse(dx + 1, dy + 3, r * s * 1.5, r * s * 0.9);
-          g.fillStyle(fill, 1);
-          g.fillCircle(dx, dy, r * s);
-          g.strokeCircle(dx, dy, r * s);
-          g.fillStyle(metal, 1);
-          g.fillCircle(dx - r * s * 0.22, dy - r * s * 0.3, r * s * 0.28);
-        }
-        break;
-      case 'mage':
-        g.fillStyle(top, 1);
-        g.fillTriangle(0, -r * 1.18, -r * 0.72, r * 0.48, r * 0.72, r * 0.48);
-        g.strokeTriangle(0, -r * 1.18, -r * 0.72, r * 0.48, r * 0.72, r * 0.48);
-        g.fillStyle(fill, 1);
-        g.fillCircle(0, -r * 0.18, r * 0.55);
-        g.fillStyle(0xb08fff, 0.95);
-        g.fillCircle(r * 0.68, -r * 0.78, r * 0.28);
-        g.lineStyle(2, 0xd9b87a, 1);
-        g.lineBetween(r * 0.42, -r * 0.28, r * 0.68, -r * 0.78);
-        break;
-    }
-
-    g.fillStyle(0xffffff, 0.18);
-    g.fillEllipse(-r * 0.22, -r * 0.55, r * 0.52, r * 0.28);
   }
 
   private updateUnitView(unit: Unit) {
@@ -1082,6 +919,7 @@ export class ArenaScene extends Phaser.Scene {
   private flashUnitDamage(unit: Unit, amount: number) {
     const view = this.unitViews.get(unit.id);
     if (!view) return;
+    this.threeLayer?.flashUnit(unit.id);
     this.tweens.killTweensOf(view.body);
     if (!unit.isDead) {
       view.body.alpha = 0.4;
@@ -1093,6 +931,7 @@ export class ArenaScene extends Phaser.Scene {
   private handleUnitDeath(unit: Unit) {
     const color = unit.team === 'player' ? 0x2a5d8a : 0xc1334a;
     this.deathPoof(unit.x, unit.y, color);
+    this.threeLayer?.removeUnit(unit.id);
     const view = this.unitViews.get(unit.id);
     if (!view) return;
     this.tweens.add({
@@ -1213,15 +1052,6 @@ export class ArenaScene extends Phaser.Scene {
 
     if (stats.hostile) this.cameras.main.shake(180, 0.003);
   }
-}
-
-// ───── helpers ─────
-
-function tintColor(color: number, factor: number): number {
-  const r = Math.max(0, Math.min(255, Math.round(((color >> 16) & 0xff) * factor)));
-  const g = Math.max(0, Math.min(255, Math.round(((color >> 8) & 0xff) * factor)));
-  const b = Math.max(0, Math.min(255, Math.round((color & 0xff) * factor)));
-  return (r << 16) | (g << 8) | b;
 }
 
 export function createGame(parent: HTMLElement): Phaser.Game {
