@@ -35,6 +35,8 @@ const main: React.CSSProperties = {
   flex: 1,
   overflowY: 'auto',
   WebkitOverflowScrolling: 'touch',
-  // 15px отступа сверху на всех страницах (+ safe-area-inset для notch'а).
-  paddingTop: 'calc(env(safe-area-inset-top, 0px) + 15px)',
+  // 30px отступа на всех страницах + safe-area-inset.
+  // Учитывает «шапку» Telegram WebApp с back/close кнопкой и More-меню,
+  // чтобы контент никогда не оказывался под ней.
+  paddingTop: 'calc(env(safe-area-inset-top, 0px) + 30px)',
 };

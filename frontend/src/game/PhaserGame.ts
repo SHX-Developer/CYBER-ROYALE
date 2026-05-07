@@ -575,33 +575,101 @@ export class ArenaScene extends Phaser.Scene {
 
   private drawRiver() {
     const g = this.wG();
-    g.fillStyle(ARENA_COLORS.river, 1);
-    g.fillRect(0, RIVER_TOP_ROW * TILE, ARENA_WIDTH, 2 * TILE);
-    g.fillStyle(ARENA_COLORS.riverEdge, 1);
-    g.fillRect(0, RIVER_TOP_ROW * TILE, ARENA_WIDTH, 2);
-    g.fillRect(0, (RIVER_BOTTOM_ROW + 1) * TILE - 2, ARENA_WIDTH, 2);
+    const top = RIVER_TOP_ROW * TILE;
+    const height = 2 * TILE;
 
-    // Слой бегущих волн — анимируется в startWaterAnimation.
+    // Глубокая вода (база).
+    g.fillStyle(0x1d4f6e, 1);
+    g.fillRect(0, top, ARENA_WIDTH, height);
+
+    // Градиент глубины — несколько горизонтальных полос светлеющего цвета
+    // от центра к краям, чтобы река выглядела «глубокой посередине».
+    const bands = [
+      { y: top + 4, h: 4, color: 0x2a6d8f, alpha: 0.7 },
+      { y: top + 10, h: 6, color: 0x3a8fb7, alpha: 0.75 },
+      { y: top + 22, h: 28, color: 0x4ea4cf, alpha: 0.85 },
+      { y: top + 54, h: 6, color: 0x3a8fb7, alpha: 0.7 },
+      { y: top + 64, h: 6, color: 0x2a6d8f, alpha: 0.6 },
+    ];
+    for (const b of bands) {
+      g.fillStyle(b.color, b.alpha);
+      g.fillRect(0, b.y, ARENA_WIDTH, b.h);
+    }
+
+    // Берега — тёмная кромка.
+    g.fillStyle(ARENA_COLORS.riverEdge, 1);
+    g.fillRect(0, top, ARENA_WIDTH, 2);
+    g.fillRect(0, (RIVER_BOTTOM_ROW + 1) * TILE - 2, ARENA_WIDTH, 2);
+    // Тёмный осадок «у берега».
+    g.fillStyle(0x183d56, 0.55);
+    g.fillRect(0, top + 2, ARENA_WIDTH, 3);
+    g.fillRect(0, (RIVER_BOTTOM_ROW + 1) * TILE - 5, ARENA_WIDTH, 3);
+
+    // Слои бегущих волн — анимируются в startWaterAnimation.
     this.waterWaves = this.wG();
   }
 
   private startWaterAnimation() {
-    let offset = 0;
+    // Несколько параллакс-слоёв волн + статичные блестящие искры с мерцанием.
+    const top = RIVER_TOP_ROW * TILE + 4;
+    const bottom = (RIVER_BOTTOM_ROW + 1) * TILE - 4;
+
+    // Предварительно расставляем искры — позиция стабильна, меняется только альфа.
+    const sparkRng = mulberry32(404);
+    const sparks: { x: number; y: number; phase: number }[] = [];
+    for (let i = 0; i < 22; i++) {
+      sparks.push({
+        x: sparkRng() * ARENA_WIDTH,
+        y: top + sparkRng() * (bottom - top),
+        phase: sparkRng() * Math.PI * 2,
+      });
+    }
+
+    let phase = 0;
     this.time.addEvent({
-      delay: 90,
+      delay: 60,
       loop: true,
       callback: () => {
         const w = this.waterWaves;
         if (!w) return;
-        offset = (offset + 4) % 60;
+        phase += 1;
         w.clear();
-        w.lineStyle(1.5, 0xffffff, 0.18);
-        const top = RIVER_TOP_ROW * TILE + 6;
-        const bottom = (RIVER_BOTTOM_ROW + 1) * TILE - 6;
-        for (let y = top; y < bottom; y += 8) {
-          for (let x = -60 + offset; x < ARENA_WIDTH + 60; x += 60) {
-            w.lineBetween(x, y, x + 24, y);
+
+        // Слой 1: длинные тёмные «впадины» (медленный).
+        w.lineStyle(2, 0x163d56, 0.45);
+        const offset1 = (phase * 1.6) % 80;
+        for (let y = top + 6; y < bottom; y += 14) {
+          for (let x = -80 + offset1; x < ARENA_WIDTH + 80; x += 80) {
+            const wobble = Math.sin((x + phase * 0.6) * 0.06) * 1.2;
+            w.lineBetween(x, y + wobble, x + 36, y - wobble);
           }
+        }
+
+        // Слой 2: средние белые блики (стандартная скорость).
+        w.lineStyle(1.4, 0xeaf6ff, 0.35);
+        const offset2 = (phase * 3.0) % 60;
+        for (let y = top + 10; y < bottom; y += 9) {
+          for (let x = -60 + offset2; x < ARENA_WIDTH + 60; x += 60) {
+            const wobble = Math.sin((x + phase * 1.2) * 0.08 + y * 0.05) * 0.8;
+            w.lineBetween(x, y + wobble, x + 22, y + wobble);
+          }
+        }
+
+        // Слой 3: короткие верхние блики (быстрый).
+        w.lineStyle(1, 0xffffff, 0.25);
+        const offset3 = (phase * 4.5) % 40;
+        for (let y = top + 4; y < bottom; y += 18) {
+          for (let x = -40 + offset3; x < ARENA_WIDTH + 40; x += 40) {
+            w.lineBetween(x, y, x + 9, y);
+          }
+        }
+
+        // Статичные искры на воде с мерцанием — каждая со своей фазой.
+        for (const s of sparks) {
+          const a = 0.2 + 0.55 * Math.max(0, Math.sin(phase * 0.18 + s.phase));
+          if (a < 0.32) continue;
+          w.fillStyle(0xffffff, a);
+          w.fillCircle(s.x, s.y, 0.8);
         }
       },
     });
@@ -656,46 +724,10 @@ export class ArenaScene extends Phaser.Scene {
       .setAlpha(0.5);
   }
 
-  /** Декор по краям арены — кустики, камни. Только в свободных колонках. */
+  /** Декор по краям арены отключён — сливался с башнями и создавал
+   *  «другие» пятна травы около них. Поле теперь однородное. */
   private drawEdgeDecor() {
-    const g = this.wG();
-    const rng = mulberry32(2026);
-
-    // Кустики и камни по левой/правой кромке (вне линий и башен).
-    const drawCluster = (x: number, y: number) => {
-      const tone = rng() < 0.5 ? 0x3d6a23 : 0x4f3c20;
-      g.fillStyle(tone, 0.85);
-      g.fillCircle(x, y, 2 + rng() * 1.2);
-      g.fillStyle(0x000000, 0.18);
-      g.fillCircle(x + 1, y + 1.5, 1.4);
-    };
-
-    // Пары полос: над верхней принцессой и под нижней.
-    const rows = [1, ROWS - 2];
-    for (const row of rows) {
-      const yMid = row * TILE + TILE / 2;
-      for (let i = 0; i < 6; i++) {
-        const x = 4 + rng() * 24;
-        drawCluster(x, yMid + (rng() - 0.5) * 6);
-        const x2 = ARENA_WIDTH - 4 - rng() * 24;
-        drawCluster(x2, yMid + (rng() - 0.5) * 6);
-      }
-    }
-
-    // Маленькие флажки на углах вражеской и игрокой принцесс.
-    const flagPoints = [
-      { x: 14, y: 88 }, // enemy left
-      { x: ARENA_WIDTH - 14, y: 88 }, // enemy right
-      { x: 14, y: ARENA_HEIGHT - 88 }, // player left
-      { x: ARENA_WIDTH - 14, y: ARENA_HEIGHT - 88 }, // player right
-    ];
-    for (const f of flagPoints) {
-      const isEnemy = f.y < ARENA_HEIGHT / 2;
-      g.fillStyle(0x6b5a3a, 1);
-      g.fillRect(f.x, f.y - 8, 1, 8);
-      g.fillStyle(isEnemy ? 0xc1334a : 0x2a5d8a, 1);
-      g.fillTriangle(f.x + 1, f.y - 8, f.x + 7, f.y - 6, f.x + 1, f.y - 4);
-    }
+    /* no-op */
   }
 
   // ───── трибуны (вне world-контейнера) ─────
@@ -764,25 +796,28 @@ export class ArenaScene extends Phaser.Scene {
 
   private attachTowerView(tower: Tower) {
     const r = rectToPx(tower.rect);
-    const isKing = tower.type === 'king';
     const isPlayer = tower.team === 'player';
 
     const rangeCircle = this.wG();
     rangeCircle.lineStyle(1, isPlayer ? ARENA_COLORS.playerTower : ARENA_COLORS.enemyTower, 0.1);
     rangeCircle.strokeCircle(tower.x, tower.y, tower.range);
 
-    const pad = isKing ? 20 : 14;
     const body = this.wG().setVisible(false);
     const turret = this.wG().setVisible(false);
     turret.x = tower.x;
     turret.y = tower.y;
 
     const hpBar = this.wG();
-    const hpText = this.wT(tower.x, r.y + pad - 12, '', {
+    // HP-текст и бар центрируем на tower.x (с lane-offset), а не на rect.
+    // Поднимаем выше, чтобы 3D-модель не перекрывала.
+    const hpY = r.y - 14;
+    const hpText = this.wT(tower.x, hpY - 4, '', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '9px',
+      fontSize: '10px',
       color: '#ffffff',
       fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 2,
     }).setOrigin(0.5, 1);
 
     this.towerViews.set(tower.id, { body, turret, hpBar, hpText, rangeCircle });
@@ -795,21 +830,27 @@ export class ArenaScene extends Phaser.Scene {
     const r = rectToPx(tower.rect);
     const isPlayer = tower.team === 'player';
     const isKing = tower.type === 'king';
-    const pad = isKing ? 20 : 14;
-    const barW = r.w - pad * 2;
-    const barH = 3;
-    const barX = r.x + pad;
-    const barY = r.y + pad - 7;
+    const barW = isKing ? 60 : 44;
+    const barH = 4;
+    const barX = tower.x - barW / 2; // строго по центру башни
+    const barY = r.y - 12;
     const fill = isPlayer ? ARENA_COLORS.playerTower : ARENA_COLORS.enemyTower;
 
     const bar = view.hpBar;
     bar.clear();
-    bar.fillStyle(0x000000, 0.45);
-    bar.fillRoundedRect(barX, barY, barW, barH, 1.5);
+    // Тёмная подложка.
+    bar.fillStyle(0x000000, 0.55);
+    bar.fillRoundedRect(barX - 1, barY - 1, barW + 2, barH + 2, 2);
+    // Серый «трек».
+    bar.fillStyle(0x303a4d, 1);
+    bar.fillRoundedRect(barX, barY, barW, barH, 2);
+    // Цветной заполненный прогресс.
     bar.fillStyle(fill, 1);
-    bar.fillRoundedRect(barX, barY, Math.max(0, barW * tower.hpRatio), barH, 1.5);
+    bar.fillRoundedRect(barX, barY, Math.max(0, barW * tower.hpRatio), barH, 2);
 
     view.hpText.setText(`${tower.hp}`);
+    view.hpText.setX(tower.x);
+    view.hpText.setY(barY - 2);
   }
 
   private flashTowerDamage(tower: Tower) {

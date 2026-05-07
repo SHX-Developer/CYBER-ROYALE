@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type Phaser from 'phaser';
+import WebApp from '@twa-dev/sdk';
 import { createGame, getArenaScene } from '@/game/PhaserGame';
 import { useUiStore } from '@/store/uiStore';
 import { useUserStore } from '@/store/userStore';
@@ -40,6 +41,29 @@ export default function BattlePage() {
     };
   }, []);
 
+  // Подключаем встроенную TG WebApp BackButton — она появляется в шапке
+  // Telegram сама и заменяет нашу кастомную кнопку «←».
+  useEffect(() => {
+    const onBack = () => {
+      playSound('buttonClick');
+      setScreen('home');
+    };
+    try {
+      WebApp.BackButton.show();
+      WebApp.BackButton.onClick(onBack);
+    } catch {
+      /* вне Telegram — silently игнорируем */
+    }
+    return () => {
+      try {
+        WebApp.BackButton.offClick(onBack);
+        WebApp.BackButton.hide();
+      } catch {
+        /* no-op */
+      }
+    };
+  }, [setScreen]);
+
   useEffect(() => {
     if (gameState === 'playing') {
       reportedRef.current = false;
@@ -77,16 +101,8 @@ export default function BattlePage() {
       <div ref={containerRef} className="arena-tilt" style={canvasWrap} />
       <div className="arena-fog" />
 
-      <button
-        onClick={() => {
-          playSound('buttonClick');
-          setScreen('home');
-        }}
-        style={backBtn}
-        aria-label="Выйти из боя"
-      >
-        ←
-      </button>
+      {/* Кастомная back-кнопка убрана — вместо неё используем
+          встроенную TG WebApp BackButton (см. useEffect выше). */}
 
       <MuteButton />
 
@@ -356,27 +372,10 @@ const canvasWrap: React.CSSProperties = {
   height: '100%',
 };
 
-const backBtn: React.CSSProperties = {
-  position: 'absolute',
-  top: 'max(15px, calc(env(safe-area-inset-top, 0px) + 15px))',
-  left: 8,
-  width: 32,
-  height: 32,
-  borderRadius: 10,
-  border: '1px solid rgba(255,255,255,0.15)',
-  background: 'rgba(11,13,18,0.65)',
-  backdropFilter: 'blur(6px)',
-  WebkitBackdropFilter: 'blur(6px)',
-  color: '#e7ecf3',
-  fontSize: 16,
-  cursor: 'pointer',
-  zIndex: 10,
-};
-
-// Кнопка mute — верхний правый угол.
+// Кнопка mute — верхний правый угол, ниже шапки TG WebApp.
 const muteBtn: React.CSSProperties = {
   position: 'absolute',
-  top: 'max(15px, calc(env(safe-area-inset-top, 0px) + 15px))',
+  top: 'calc(env(safe-area-inset-top, 0px) + 30px)',
   right: 8,
   width: 32,
   height: 32,

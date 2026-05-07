@@ -18,11 +18,12 @@ export interface TowerStats {
 
 /**
  * ТЗ Этапа 7. Для удобного балансинга позже — собрано в одном месте.
- * Принцессы стреляют быстрее — на их платформе стоит лучница.
+ * Принцессы со своей лучницей стреляют быстрее короля,
+ * но всё же не «в авто-режиме» — иначе перемалывают любой пуш.
  */
 export const TOWER_STATS: Record<TowerType, TowerStats> = {
-  king: { maxHp: 3000, damage: 80, range: 160, attackSpeed: 1 },
-  princess: { maxHp: 1800, damage: 55, range: 225, attackSpeed: 0.55 },
+  king: { maxHp: 3000, damage: 80, range: 160, attackSpeed: 1.1 },
+  princess: { maxHp: 1800, damage: 55, range: 225, attackSpeed: 0.85 },
 };
 
 export interface TowerInit {
