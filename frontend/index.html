@@ -8,15 +8,21 @@
     <style>
       html, body, #root { height: 100%; margin: 0; padding: 0; overscroll-behavior: none; }
       body { background: #0b0d12; color: #e7ecf3; font-family: system-ui, -apple-system, sans-serif; }
+      button {
+        -webkit-tap-highlight-color: transparent;
+      }
       #root {
         box-sizing: border-box;
       }
 
       .arena-tilt {
-        background: #0b0d12;
+        background:
+          radial-gradient(circle at 50% 38%, rgba(255, 210, 103, 0.07), transparent 28%),
+          #0b0d12;
       }
       .arena-tilt > canvas {
         image-rendering: auto;
+        filter: saturate(1.08) contrast(1.04);
       }
 
       /* Туман-вуаль на верху арены — даёт ощущение глубины. */
@@ -26,11 +32,92 @@
         pointer-events: none;
         background: linear-gradient(
           180deg,
-          rgba(0, 0, 0, 0.32) 0%,
+          rgba(0, 0, 0, 0.28) 0%,
           rgba(0, 0, 0, 0.08) 18%,
           rgba(0, 0, 0, 0) 35%,
-          rgba(0, 0, 0, 0) 100%
+          rgba(0, 0, 0, 0) 70%,
+          rgba(0, 0, 0, 0.18) 100%
         );
+        animation: arenaFogDrift 7s ease-in-out infinite alternate;
+      }
+
+      .arena-vignette {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+          radial-gradient(ellipse at 50% 46%, transparent 50%, rgba(0, 0, 0, 0.28) 100%),
+          linear-gradient(90deg, rgba(101, 200, 255, 0.08), transparent 22%, transparent 78%, rgba(255, 106, 125, 0.08));
+        opacity: 0.72;
+      }
+
+      .arena-scanlines {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.08;
+        background: repeating-linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.8) 0,
+          rgba(255, 255, 255, 0.8) 1px,
+          transparent 1px,
+          transparent 5px
+        );
+      }
+
+      .battle-card,
+      .mute-button {
+        transition:
+          transform 140ms ease,
+          box-shadow 140ms ease,
+          border-color 140ms ease,
+          filter 140ms ease;
+      }
+
+      .battle-card:active,
+      .mute-button:active {
+        transform: translateY(1px) scale(0.97);
+      }
+
+      .battle-card:focus-visible,
+      .mute-button:focus-visible {
+        outline: 2px solid rgba(255, 210, 103, 0.9);
+        outline-offset: 2px;
+      }
+
+      @keyframes arenaFogDrift {
+        from { opacity: 0.78; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(4px); }
+      }
+
+      @media (pointer: coarse) {
+        .arena-tilt > canvas {
+          filter: saturate(1.14) contrast(1.06) brightness(1.03);
+        }
+
+        .arena-fog {
+          background: linear-gradient(
+            180deg,
+            rgba(0, 0, 0, 0.22) 0%,
+            rgba(0, 0, 0, 0.06) 16%,
+            rgba(0, 0, 0, 0) 36%,
+            rgba(0, 0, 0, 0) 72%,
+            rgba(0, 0, 0, 0.14) 100%
+          );
+        }
+
+        .arena-vignette {
+          opacity: 0.58;
+        }
+
+        .arena-scanlines {
+          opacity: 0.045;
+          background-size: 100% 6px;
+        }
+
+        .battle-card {
+          will-change: transform, box-shadow, filter;
+        }
       }
     </style>
   </head>

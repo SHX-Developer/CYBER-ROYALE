@@ -14,9 +14,22 @@ import type { SpellCode } from './spells';
 const CAMERA_Y = 760;
 const CAMERA_Z = 620;
 const GROUND_Z_SCALE = Math.hypot(CAMERA_Y, CAMERA_Z) / CAMERA_Y;
-// Cap pixel ratio at 2 — выше отдача в качестве/нагрузке диcпропорциональна,
-// особенно на телефонах с DPR=3.
-const MODEL_DPR = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+const IS_COARSE_POINTER =
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(pointer: coarse)').matches;
+const DEVICE_DPR = Math.max(1, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1);
+const DEVICE_MEMORY_GB =
+  typeof navigator === 'undefined'
+    ? 8
+    : ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8);
+const CPU_THREADS = typeof navigator === 'undefined' ? 8 : navigator.hardwareConcurrency || 8;
+const IS_LOW_MOBILE = IS_COARSE_POINTER && (DEVICE_MEMORY_GB <= 4 || CPU_THREADS <= 4);
+const MOBILE_DPR_CAP = IS_LOW_MOBILE ? 2 : 2.35;
+const SHADOW_MAP_SIZE = IS_LOW_MOBILE ? 768 : 1024;
+const USE_SOFT_SHADOWS = !IS_LOW_MOBILE;
+// На мобилках тоже держим качественный рендер, но не выше разумного лимита.
+const MODEL_DPR = Math.min(IS_COARSE_POINTER ? MOBILE_DPR_CAP : 2.5, DEVICE_DPR);
 
 // Универсальный масштаб всех юнитов — увеличен на 20% по запросу.
 const UNIT_SCALE = 1.2;
@@ -24,6 +37,7 @@ const UNIT_SCALE = 1.2;
 interface UnitModel {
   group: THREE.Group;
   parts: THREE.Object3D[];
+  aura?: THREE.Mesh;
   bodyBaseY: number;
   body?: THREE.Object3D;
   legLeft?: THREE.Object3D;
@@ -41,6 +55,7 @@ interface UnitModel {
 interface TowerModel {
   group: THREE.Group;
   parts: THREE.Object3D[];
+  aura?: THREE.Mesh;
   hp: number;
   destroyedAnimStart: number;
   isDestroyed: boolean;
@@ -89,10 +104,12 @@ export class ThreeBattleLayer {
     this.renderer.setPixelRatio(MODEL_DPR);
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = IS_COARSE_POINTER ? 1.12 : 1.08;
     this.renderer.shadowMap.enabled = true;
-    // PCFSoftShadowMap красивее, но дороже. На мобиле берём PCFShadowMap —
-    // визуально различима только на close-up, а fps это спасает на низком тире.
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = USE_SOFT_SHADOWS
+      ? THREE.PCFSoftShadowMap
+      : THREE.PCFShadowMap;
 
     const canvas = this.renderer.domElement;
     canvas.style.position = 'absolute';
@@ -625,6 +642,13 @@ export class ThreeBattleLayer {
       const moving = unit.state === 'moving';
       const bob = moving ? Math.sin(runT + unit.x * 0.05) * 1.4 : 0;
       if (model.body) model.body.position.y = model.bodyBaseY + bob;
+      if (model.aura) {
+        const pulse = 1 + Math.sin(now / 260 + unit.x * 0.03) * 0.045;
+        const size = unit.type === 'tank' ? 1.45 : unit.type === 'squad' ? 1.15 : 1;
+        model.aura.scale.setScalar(size * pulse);
+        const mat = model.aura.material as THREE.MeshBasicMaterial;
+        mat.opacity = unit.state === 'moving' ? 0.18 : 0.13;
+      }
 
       if (model.legLeft && model.legRight) {
         const swing = moving ? Math.sin(runT * 1.2 + unit.x * 0.05) * 0.85 : 0;
@@ -669,6 +693,12 @@ export class ThreeBattleLayer {
       }
       model.hp = tower.hp;
       if (tower.isDestroyed && !model.isDestroyed) this.destroyTower(tower.id);
+      if (model.aura) {
+        const mat = model.aura.material as THREE.MeshBasicMaterial;
+        const pulse = 1 + Math.sin(now / 520 + tower.x * 0.02) * 0.035;
+        model.aura.scale.setScalar(pulse);
+        mat.opacity = tower.isDestroyed ? 0 : tower.type === 'king' ? 0.2 : 0.16;
+      }
 
       // Анимация лучницы — натяжение тетивы при выстреле.
       if (model.archer && model.archerArm) {
@@ -1017,7 +1047,20 @@ export class ThreeBattleLayer {
       }
     }
 
-    // Подставку-кружок убрали по запросу — юниты «ходят ногами».
+    const aura = new THREE.Mesh(
+      new THREE.RingGeometry(unit.radius * 0.42, unit.radius * 0.78, 40),
+      new THREE.MeshBasicMaterial({
+        color: unit.team === 'player' ? 0x65c8ff : 0xff6a7d,
+        transparent: true,
+        opacity: 0.14,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      }),
+    );
+    aura.rotation.x = -Math.PI / 2;
+    aura.position.y = 0.35;
+    group.add(aura);
 
     // Общее увеличение всех юнитов на ~20%.
     group.scale.setScalar(UNIT_SCALE);
@@ -1025,6 +1068,7 @@ export class ThreeBattleLayer {
     return {
       group,
       parts,
+      aura,
       bodyBaseY,
       body,
       legLeft,
@@ -1093,9 +1137,25 @@ export class ThreeBattleLayer {
       }
     }
 
+    const aura = new THREE.Mesh(
+      new THREE.RingGeometry(isKing ? width * 0.42 : width * 0.36, isKing ? width * 0.72 : width * 0.62, 48),
+      new THREE.MeshBasicMaterial({
+        color: tower.team === 'player' ? 0x65c8ff : 0xff6a7d,
+        transparent: true,
+        opacity: isKing ? 0.2 : 0.16,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      }),
+    );
+    aura.rotation.x = -Math.PI / 2;
+    aura.position.y = 0.45;
+    group.add(aura);
+
     const model: TowerModel = {
       group,
       parts,
+      aura,
       hp: tower.hp,
       destroyedAnimStart: 0,
       isDestroyed: false,
@@ -1191,13 +1251,11 @@ export class ThreeBattleLayer {
   }
 
   private setupLighting() {
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x3d4a5c, 1.35));
-    const key = new THREE.DirectionalLight(0xffffff, 2.15);
+    this.scene.add(new THREE.HemisphereLight(0xf7fbff, 0x2d3445, IS_COARSE_POINTER ? 1.3 : 1.22));
+    const key = new THREE.DirectionalLight(0xffffff, IS_COARSE_POINTER ? 2.28 : 2.15);
     key.position.set(-140, 360, 240);
     key.castShadow = true;
-    // Уменьшил shadow map с 1024 до 768 — на фоне многих юнитов выигрыш fps,
-    // визуально на 360px арене разница незаметна.
-    key.shadow.mapSize.set(768, 768);
+    key.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
     key.shadow.camera.near = 1;
     key.shadow.camera.far = 900;
     key.shadow.camera.left = -260;
@@ -1208,9 +1266,13 @@ export class ThreeBattleLayer {
     key.shadow.bias = -0.0007;
     this.scene.add(key);
 
-    const rim = new THREE.DirectionalLight(0x8fd1ff, 0.72);
+    const rim = new THREE.DirectionalLight(0x8fd1ff, IS_COARSE_POINTER ? 0.86 : 0.72);
     rim.position.set(180, 180, -260);
     this.scene.add(rim);
+
+    const warmFill = new THREE.DirectionalLight(0xffd267, IS_COARSE_POINTER ? 0.34 : 0.28);
+    warmFill.position.set(120, 120, 260);
+    this.scene.add(warmFill);
   }
 
   private setupShadowPlane() {

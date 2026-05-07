@@ -100,6 +100,8 @@ export default function BattlePage() {
     <div style={page}>
       <div ref={containerRef} className="arena-tilt" style={canvasWrap} />
       <div className="arena-fog" />
+      <div className="arena-vignette" />
+      <div className="arena-scanlines" />
 
       {/* Кастомная back-кнопка убрана — вместо неё используем
           встроенную TG WebApp BackButton (см. useEffect выше). */}
@@ -123,6 +125,7 @@ function MuteButton() {
   const [muted, setMuted] = useState(soundEngine.isMuted());
   return (
     <button
+      className="mute-button"
       onClick={() => {
         const next = soundEngine.toggleMute();
         setMuted(next);
@@ -242,11 +245,22 @@ function CardSlotButton({ card }: { card: CardDef }) {
   const isSpell = card.kind === 'spell';
   return (
     <button
+      className="battle-card"
       onClick={onClick}
       style={{
         ...cardBtn,
-        outline: isSelected ? `2px solid ${isSpell ? '#b08fff' : '#ffd267'}` : 'none',
+        borderColor: isSelected ? (isSpell ? '#b08fff' : '#ffd267') : '#2a3142',
+        outline: isSelected ? `2px solid ${isSpell ? 'rgba(176,143,255,0.45)' : 'rgba(255,210,103,0.45)'}` : 'none',
         opacity: canAfford ? 1 : 0.5,
+        transform: isSelected ? 'translateY(-4px)' : 'translateY(0)',
+        filter: canAfford ? 'saturate(1.08)' : 'grayscale(0.25)',
+        boxShadow: isSelected
+          ? isSpell
+            ? '0 10px 22px rgba(124,92,255,0.34), inset 0 0 18px rgba(176,143,255,0.18)'
+            : '0 10px 22px rgba(255,210,103,0.28), inset 0 0 18px rgba(255,210,103,0.14)'
+          : canAfford
+            ? '0 5px 14px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.05)'
+            : 'inset 0 1px 0 rgba(255,255,255,0.03)',
         background: isSelected
           ? 'linear-gradient(180deg, #2a3142 0%, #181d2a 100%)'
           : 'linear-gradient(180deg, #181d2a 0%, #0f1320 100%)',
@@ -363,13 +377,16 @@ const page: React.CSSProperties = {
   position: 'relative',
   height: '100%',
   width: '100%',
-  background: '#0b0d12',
+  background:
+    'radial-gradient(circle at 50% 38%, rgba(255,210,103,0.08), transparent 24%), #0b0d12',
   overflow: 'hidden',
+  touchAction: 'none',
 };
 
 const canvasWrap: React.CSSProperties = {
   width: '100%',
   height: '100%',
+  touchAction: 'none',
 };
 
 // Кнопка mute — верхний правый угол, ниже шапки TG WebApp.
@@ -388,16 +405,18 @@ const muteBtn: React.CSSProperties = {
   fontSize: 14,
   cursor: 'pointer',
   zIndex: 10,
+  boxShadow: '0 8px 18px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.08)',
+  touchAction: 'manipulation',
 };
 
 // const badge: React.CSSProperties = { /* стиль скрытого Badge */ };
 
 const hudWrap: React.CSSProperties = {
   position: 'absolute',
-  bottom: 'calc(6px + env(safe-area-inset-bottom, 0px))',
+  bottom: 'calc(max(8px, 1.2svh) + env(safe-area-inset-bottom, 0px))',
   left: 0,
   right: 0,
-  padding: '0 8px',
+  padding: '0 max(8px, 2.5vw)',
   display: 'flex',
   flexDirection: 'column',
   gap: 6,
@@ -411,12 +430,15 @@ const energySegmentRow: React.CSSProperties = {
   gridTemplateColumns: 'repeat(10, 1fr)',
   gap: 2,
   width: '100%',
-  height: 14,
+  height: 'clamp(14px, 2.2svh, 18px)',
   padding: '2px 30px 2px 2px',
   borderRadius: 8,
   background: 'rgba(11,13,18,0.65)',
   border: '1px solid rgba(255,255,255,0.12)',
-  boxShadow: '0 0 8px rgba(124, 92, 255, 0.18) inset',
+  backdropFilter: 'blur(8px)',
+  WebkitBackdropFilter: 'blur(8px)',
+  boxShadow:
+    '0 8px 18px rgba(0,0,0,0.28), 0 0 12px rgba(124, 92, 255, 0.16) inset',
   boxSizing: 'border-box',
 };
 
@@ -445,7 +467,7 @@ const energySegmentLabel: React.CSSProperties = {
   transform: 'translateY(-50%)',
   display: 'flex',
   alignItems: 'center',
-  fontSize: 9,
+  fontSize: 'clamp(9px, 2.6vw, 11px)',
   fontWeight: 800,
   color: '#ffffff',
   textShadow: '0 1px 2px rgba(0,0,0,0.6)',
@@ -454,7 +476,7 @@ const energySegmentLabel: React.CSSProperties = {
 const hand4plusNext: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(4, 1fr) 0.55fr',
-  gap: 5,
+  gap: 'clamp(5px, 1.6vw, 8px)',
 };
 
 const cardBtn: React.CSSProperties = {
@@ -462,20 +484,24 @@ const cardBtn: React.CSSProperties = {
   flexDirection: 'column',
   alignItems: 'center',
   gap: 1,
-  padding: '6px 3px 5px',
+  padding: 'clamp(6px, 1.7svh, 9px) 3px clamp(5px, 1.4svh, 8px)',
   borderRadius: 9,
   border: '1px solid #2a3142',
   color: '#e7ecf3',
   cursor: 'pointer',
+  minHeight: 'clamp(76px, 11.5svh, 92px)',
+  backdropFilter: 'blur(6px)',
+  WebkitBackdropFilter: 'blur(6px)',
+  touchAction: 'manipulation',
 };
 
 const cardIcon: React.CSSProperties = {
-  fontSize: 20,
-  lineHeight: '22px',
+  fontSize: 'clamp(20px, 5.8vw, 25px)',
+  lineHeight: 'clamp(22px, 6.2vw, 27px)',
 };
 
 const cardName: React.CSSProperties = {
-  fontSize: 10,
+  fontSize: 'clamp(9px, 2.7vw, 11px)',
   fontWeight: 600,
   whiteSpace: 'nowrap',
   overflow: 'hidden',
@@ -484,7 +510,7 @@ const cardName: React.CSSProperties = {
 };
 
 const cardCost: React.CSSProperties = {
-  fontSize: 10,
+  fontSize: 'clamp(10px, 2.8vw, 12px)',
   opacity: 0.85,
   display: 'inline-flex',
   alignItems: 'center',
@@ -499,8 +525,10 @@ const nextSlot: React.CSSProperties = {
   padding: '4px 2px',
   borderRadius: 9,
   border: '1px dashed #2a3142',
-  background: '#0a0d14',
+  background: 'rgba(10,13,20,0.92)',
   color: '#9ba1b0',
+  minHeight: 'clamp(76px, 11.5svh, 92px)',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
 };
 
 const nextLabel: React.CSSProperties = {

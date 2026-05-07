@@ -24,6 +24,7 @@ import {
   SCENE_HEIGHT,
   TILE,
   TOP_STAND_PX,
+  TOWER_LAYOUTS,
   rectToPx,
   type Lane,
   type Side,
@@ -122,6 +123,7 @@ export class ArenaScene extends Phaser.Scene {
     if (parent) this.threeLayer = new ThreeBattleLayer(parent, this.game.canvas);
 
     this.drawZones();
+    this.drawArenaHighlights();
     this.drawLanes();
     this.drawEdgeDecor();
     this.drawRiver();
@@ -531,6 +533,34 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
+  private drawArenaHighlights() {
+    const light = this.wG();
+
+    // Мягкое цветовое разделение половин без новых текстур.
+    light.fillStyle(0xff6a7d, 0.06);
+    light.fillRoundedRect(8, 8, ARENA_WIDTH - 16, RIVER_TOP_ROW * TILE - 16, 18);
+    light.fillStyle(0x65c8ff, 0.065);
+    light.fillRoundedRect(
+      8,
+      PLAYER_FIRST_ROW * TILE + 8,
+      ARENA_WIDTH - 16,
+      ARENA_HEIGHT - PLAYER_FIRST_ROW * TILE - 16,
+      18,
+    );
+
+    // Подиумы башен в 2D подчёркивают 3D-модели и делают сцену плотнее.
+    for (const tower of TOWER_LAYOUTS) {
+      const r = rectToPx(tower.rect);
+      const cx = r.cx;
+      const cy = r.cy;
+      const isPlayer = tower.team === 'player';
+      light.fillStyle(isPlayer ? 0x65c8ff : 0xff6a7d, tower.type === 'king' ? 0.12 : 0.09);
+      light.fillEllipse(cx, cy + (tower.type === 'king' ? 18 : 12), r.w * 0.72, r.h * 0.38);
+      light.lineStyle(1, isPlayer ? 0x9ddcff : 0xffa0ad, 0.18);
+      light.strokeEllipse(cx, cy + (tower.type === 'king' ? 18 : 12), r.w * 0.76, r.h * 0.42);
+    }
+  }
+
   /**
    * Дороги — простые вертикали по обеим линиям (lane col=1 / col=7).
    * Принцессы теперь стоят на той же оси, поэтому достаточно прямой дороги
@@ -682,6 +712,11 @@ export class ArenaScene extends Phaser.Scene {
     for (const b of BRIDGES) {
       const r = rectToPx(b);
       g.fillRect(r.x, r.y, r.w, r.h);
+      g.fillStyle(0xffffff, 0.08);
+      g.fillRect(r.x + 2, r.y + 2, r.w - 4, 4);
+      g.fillStyle(0x000000, 0.14);
+      g.fillRect(r.x + 2, r.y + r.h - 6, r.w - 4, 4);
+      g.fillStyle(ARENA_COLORS.bridge, 1);
       g.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
     }
     // Доски на мостах — горизонтальные линии.
@@ -1137,12 +1172,16 @@ export class ArenaScene extends Phaser.Scene {
     const g = this.wG();
     if (p.kind === 'magic') {
       // Магический шарик — фиолетовый с golden core.
+      g.fillStyle(0xb08fff, 0.18);
+      g.fillEllipse(-8, 0, 24, 8);
       g.fillStyle(0xb08fff, 0.85);
       g.fillCircle(0, 0, 4);
       g.fillStyle(0xffd267, 1);
       g.fillCircle(0, 0, 2);
     } else {
       // Стрела — желто-коричневая капля.
+      g.fillStyle(0xffd267, 0.16);
+      g.fillTriangle(-14, -3, -2, 0, -14, 3);
       g.fillStyle(0xb89a64, 1);
       g.fillTriangle(-5, -2, 5, 0, -5, 2);
       g.fillStyle(0xffffff, 0.6);
@@ -1161,6 +1200,8 @@ export class ArenaScene extends Phaser.Scene {
     const flash = this.wG();
     flash.fillStyle(p.kind === 'magic' ? 0xb08fff : 0xffd267, 0.85);
     flash.fillCircle(0, 0, 6);
+    flash.lineStyle(1.6, p.kind === 'magic' ? 0xd8c7ff : 0xfff0b0, 0.9);
+    flash.strokeCircle(0, 0, 9);
     flash.x = p.x;
     flash.y = p.y;
     this.tweens.add({
@@ -1170,6 +1211,25 @@ export class ArenaScene extends Phaser.Scene {
       duration: 220,
       onComplete: () => flash.destroy(),
     });
+    for (let i = 0; i < 5; i++) {
+      const shard = this.wG();
+      shard.fillStyle(p.kind === 'magic' ? 0xb08fff : 0xffd267, 0.75);
+      shard.fillCircle(0, 0, 1.6);
+      shard.x = p.x;
+      shard.y = p.y;
+      const a = (Math.PI * 2 * i) / 5 + Math.random() * 0.35;
+      const dist = 8 + Math.random() * 9;
+      this.tweens.add({
+        targets: shard,
+        x: p.x + Math.cos(a) * dist,
+        y: p.y + Math.sin(a) * dist,
+        alpha: 0,
+        scale: 0.35,
+        duration: 240,
+        ease: 'Quad.Out',
+        onComplete: () => shard.destroy(),
+      });
+    }
     g.destroy();
     this.projectileViews.delete(p.id);
   }
