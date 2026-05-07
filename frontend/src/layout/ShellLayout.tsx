@@ -35,5 +35,6 @@ const main: React.CSSProperties = {
   flex: 1,
   overflowY: 'auto',
   WebkitOverflowScrolling: 'touch',
-  paddingTop: 'max(18px, calc(env(safe-area-inset-top, 0px) + 14px))',
+  // 15px отступа сверху на всех страницах (+ safe-area-inset для notch'а).
+  paddingTop: 'calc(env(safe-area-inset-top, 0px) + 15px)',
 };

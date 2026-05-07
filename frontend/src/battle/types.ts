@@ -60,7 +60,13 @@ export type BattleEvent =
   | { kind: 'unitDamaged'; unit: Unit; amount: number }
   | { kind: 'unitHealed'; unit: Unit; amount: number }
   | { kind: 'unitDied'; unit: Unit }
-  | { kind: 'attack'; from: { x: number; y: number }; to: { x: number; y: number } }
+  | {
+      kind: 'attack';
+      attacker: Unit;
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+      ranged: boolean;
+    }
   | { kind: 'towerDamaged'; tower: Tower; amount: number }
   | { kind: 'towerDestroyed'; tower: Tower }
   | { kind: 'spellCast'; code: SpellCode; x: number; y: number; team: Side }

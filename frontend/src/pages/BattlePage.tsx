@@ -96,19 +96,25 @@ function TopBar() {
   const td = useBattleStore((s) => s.towersDestroyed);
   const timeLeft = useBattleStore((s) => s.matchTimeLeftMs);
   return (
-    <div style={topBar}>
-      <Badge>
-        <span style={{ opacity: 0.7 }}>⏱</span>
-        <span style={{ marginLeft: 6, fontVariantNumeric: 'tabular-nums' }}>
-          {formatTime(timeLeft)}
-        </span>
-      </Badge>
-      <Badge>
-        <span style={{ color: '#7fb9ff' }}>★ {td.enemy}</span>
-        <span style={{ opacity: 0.4, margin: '0 6px' }}>:</span>
-        <span style={{ color: '#ff8585' }}>{td.player} ★</span>
-      </Badge>
-    </div>
+    <>
+      {/* Звёзды — верхний левый угол (рядом с back-кнопкой). */}
+      <div style={starsCorner}>
+        <Badge>
+          <span style={{ color: '#7fb9ff' }}>★ {td.player}</span>
+          <span style={{ opacity: 0.4, margin: '0 6px' }}>:</span>
+          <span style={{ color: '#ff8585' }}>{td.enemy} ★</span>
+        </Badge>
+      </div>
+      {/* Время — верхний правый угол. */}
+      <div style={timeCorner}>
+        <Badge>
+          <span style={{ opacity: 0.7 }}>⏱</span>
+          <span style={{ marginLeft: 6, fontVariantNumeric: 'tabular-nums' }}>
+            {formatTime(timeLeft)}
+          </span>
+        </Badge>
+      </div>
+    </>
   );
 }
 
@@ -297,7 +303,7 @@ const canvasWrap: React.CSSProperties = {
 
 const backBtn: React.CSSProperties = {
   position: 'absolute',
-  top: 'max(8px, calc(env(safe-area-inset-top, 0px) + 8px))',
+  top: 'max(15px, calc(env(safe-area-inset-top, 0px) + 15px))',
   left: 8,
   width: 32,
   height: 32,
@@ -312,15 +318,19 @@ const backBtn: React.CSSProperties = {
   zIndex: 10,
 };
 
-const topBar: React.CSSProperties = {
+// Звёзды — верхний левый угол, чуть правее back-кнопки.
+const starsCorner: React.CSSProperties = {
   position: 'absolute',
-  top: 'max(10px, calc(env(safe-area-inset-top, 0px) + 8px))',
-  left: '50%',
-  transform: 'translateX(-50%)',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: 5,
+  top: 'max(15px, calc(env(safe-area-inset-top, 0px) + 15px))',
+  left: 48,
+  zIndex: 10,
+};
+
+// Время — верхний правый угол.
+const timeCorner: React.CSSProperties = {
+  position: 'absolute',
+  top: 'max(15px, calc(env(safe-area-inset-top, 0px) + 15px))',
+  right: 8,
   zIndex: 10,
 };
 

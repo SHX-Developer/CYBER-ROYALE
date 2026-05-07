@@ -234,6 +234,7 @@ export class ArenaScene extends Phaser.Scene {
         this.handleUnitDeath(e.unit);
         break;
       case 'attack':
+        this.renderAttackEffect(e);
         break;
       case 'towerDamaged':
         this.flashTowerDamage(e.tower);
@@ -439,10 +440,12 @@ export class ArenaScene extends Phaser.Scene {
     const matchResult: MatchResult = {
       outcome,
       durationSec,
-      towersDestroyed: td.enemy,
-      towersLost: td.player,
-      coinsEarned: baseCoins + td.enemy * 10,
-      xpEarned: baseXp + td.enemy * 5,
+      // td.player = сколько вражеских башен снёс игрок.
+      // td.enemy  = сколько своих башен потерял.
+      towersDestroyed: td.player,
+      towersLost: td.enemy,
+      coinsEarned: baseCoins + td.player * 10,
+      xpEarned: baseXp + td.player * 5,
     };
 
     const store = useBattleStore.getState();
@@ -504,32 +507,75 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Дороги, ведущие именно к башням.
+   *
+   * Башни-принцессы стоят колонками 0-1 (левая) и 7-8 (правая),
+   * центры на x=40 / x=320. Линии движения юнитов идут по col=1 (x≈60)
+   * и col=7 (x≈300). Получаем чёткую дорогу от верха арены к верхушке
+   * принцессы, изгиб к её центру и продолжение к мосту — и зеркально
+   * с нижней половины. Дорога теперь не пропадает за 3D-моделью башни.
+   */
   private drawLanes() {
     const road = this.wG();
     road.fillStyle(ARENA_COLORS.lane, 1);
     road.lineStyle(1, ARENA_COLORS.laneStroke, 0.65);
-    for (const lane of ['left', 'right'] as const) {
-      const x = LANES[lane].col * TILE + 5;
-      road.fillRoundedRect(x, 0, TILE - 10, RIVER_TOP_ROW * TILE, 9);
-      road.strokeRoundedRect(x, 0, TILE - 10, RIVER_TOP_ROW * TILE, 9);
-      road.fillRoundedRect(
-        x,
-        PLAYER_FIRST_ROW * TILE,
-        TILE - 10,
-        ARENA_HEIGHT - PLAYER_FIRST_ROW * TILE,
-        9,
-      );
-      road.strokeRoundedRect(
-        x,
-        PLAYER_FIRST_ROW * TILE,
-        TILE - 10,
-        ARENA_HEIGHT - PLAYER_FIRST_ROW * TILE,
-        9,
-      );
-    }
-    this.drawTowerRoadConnectors(road);
 
-    // Здесь — декор: камешки на road-клетках.
+    const laneW = TILE - 10;
+    const ePrincessTopY = 2 * TILE; // 80
+    const ePrincessBotY = 4 * TILE; // 160
+    const ePrincessCenterX = (col: number) => col * TILE + TILE; // x=40 / x=320
+    const pPrincessTopY = (ROWS - 4) * TILE; // 560
+    const pPrincessBotY = (ROWS - 2) * TILE; // 640
+    const bridgeTopY = RIVER_TOP_ROW * TILE; // 320
+    const bridgeBotY = (RIVER_BOTTOM_ROW + 1) * TILE; // 400
+    const arenaH = ARENA_HEIGHT;
+
+    for (const lane of ['left', 'right'] as const) {
+      const laneCol = LANES[lane].col;
+      const laneCenterX = laneCol * TILE + TILE / 2;
+      const laneRectX = laneCol * TILE + 5;
+      // Левая принцесса — col 0..1, центр x=40 (cols 0+1).
+      // Правая принцесса — col 7..8, центр x=320 (cols 7+1).
+      const isLeft = lane === 'left';
+      const princessOuterCol = isLeft ? 0 : COLS - 2;
+      const princessCenterX = ePrincessCenterX(princessOuterCol);
+
+      // ────── Верхняя половина (вражеский тыл → принцесса → мост) ──────
+      // Дорога от верхнего края арены до верха принцессы (по lane col).
+      road.fillRoundedRect(laneRectX, 0, laneW, ePrincessTopY + 4, 8);
+      road.strokeRoundedRect(laneRectX, 0, laneW, ePrincessTopY + 4, 8);
+      // Изгиб «через» принцессу по её центральному столбцу.
+      const upperX = Math.min(laneRectX, princessCenterX - laneW / 2);
+      const upperW = Math.max(laneRectX + laneW, princessCenterX + laneW / 2) - upperX;
+      road.fillRoundedRect(upperX, ePrincessTopY + 2, upperW, ePrincessBotY - ePrincessTopY - 4, 8);
+      road.strokeRoundedRect(upperX, ePrincessTopY + 2, upperW, ePrincessBotY - ePrincessTopY - 4, 8);
+      // Дорога от низа принцессы до моста.
+      road.fillRoundedRect(laneRectX, ePrincessBotY - 4, laneW, bridgeTopY - ePrincessBotY + 4, 8);
+      road.strokeRoundedRect(laneRectX, ePrincessBotY - 4, laneW, bridgeTopY - ePrincessBotY + 4, 8);
+
+      // ────── Нижняя половина (мост → принцесса игрока → спавн) ──────
+      // От моста до верха принцессы игрока.
+      road.fillRoundedRect(laneRectX, bridgeBotY - 4, laneW, pPrincessTopY - bridgeBotY + 4, 8);
+      road.strokeRoundedRect(laneRectX, bridgeBotY - 4, laneW, pPrincessTopY - bridgeBotY + 4, 8);
+      // Через принцессу игрока.
+      const lowerX = Math.min(laneRectX, princessCenterX - laneW / 2);
+      const lowerW = Math.max(laneRectX + laneW, princessCenterX + laneW / 2) - lowerX;
+      road.fillRoundedRect(lowerX, pPrincessTopY + 2, lowerW, pPrincessBotY - pPrincessTopY - 4, 8);
+      road.strokeRoundedRect(lowerX, pPrincessTopY + 2, lowerW, pPrincessBotY - pPrincessTopY - 4, 8);
+      // От низа принцессы игрока до края арены.
+      road.fillRoundedRect(laneRectX, pPrincessBotY - 4, laneW, arenaH - pPrincessBotY + 4, 8);
+      road.strokeRoundedRect(laneRectX, pPrincessBotY - 4, laneW, arenaH - pPrincessBotY + 4, 8);
+
+      // Лёгкая «ступенька» — небольшой круг на месте излома.
+      road.fillStyle(ARENA_COLORS.lane, 1);
+      road.fillCircle(princessCenterX, ePrincessBotY, 6);
+      road.fillCircle(princessCenterX, pPrincessTopY, 6);
+      road.fillCircle(laneCenterX, ePrincessTopY, 6);
+      road.fillCircle(laneCenterX, pPrincessBotY, 6);
+    }
+
+    // Декор: камешки на дороге.
     const stones = this.wG();
     stones.fillStyle(0x000000, 0.18);
     const rng = mulberry32(7);
@@ -543,33 +589,6 @@ export class ArenaScene extends Phaser.Scene {
           stones.fillCircle(sx, sy, 1.4);
         }
       }
-    }
-  }
-
-  private drawTowerRoadConnectors(g: Phaser.GameObjects.Graphics) {
-    const connectorH = 18;
-    const leftLaneX = LANES.left.col * TILE + TILE / 2;
-    const rightLaneX = LANES.right.col * TILE + TILE / 2;
-    const leftTowerX = TILE;
-    const rightTowerX = ARENA_WIDTH - TILE;
-    const enemyPrincessY = 3 * TILE;
-    const playerPrincessY = (ROWS - 3) * TILE;
-
-    for (const y of [enemyPrincessY, playerPrincessY]) {
-      g.fillRoundedRect(
-        Math.min(leftTowerX, leftLaneX) - 6,
-        y - connectorH / 2,
-        Math.abs(leftLaneX - leftTowerX) + 12,
-        connectorH,
-        7,
-      );
-      g.fillRoundedRect(
-        Math.min(rightLaneX, rightTowerX) - 6,
-        y - connectorH / 2,
-        Math.abs(rightTowerX - rightLaneX) + 12,
-        connectorH,
-        7,
-      );
     }
   }
 
@@ -967,17 +986,127 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Эффект смерти: «эликсир» проливается каплями вокруг и быстро исчезает.
+   * Рисуем все примитивы в локальной системе координат (0,0) и позиционируем
+   * через graphics.x/y, чтобы scale-tween не «отлетал» от точки смерти.
+   */
   private deathPoof(x: number, y: number, color: number) {
-    const g = this.wG();
-    g.fillStyle(color, 0.55);
-    g.fillCircle(x, y, 10);
+    // Лужа эликсира на земле.
+    const puddle = this.wG();
+    puddle.fillStyle(color, 0.65);
+    puddle.fillEllipse(0, 0, 22, 10);
+    puddle.x = x;
+    puddle.y = y + 2;
     this.tweens.add({
-      targets: g,
-      scale: 2.5,
+      targets: puddle,
+      scaleX: 1.6,
+      scaleY: 1.6,
       alpha: 0,
-      duration: 380,
-      onComplete: () => g.destroy(),
+      duration: 700,
+      ease: 'Quad.Out',
+      onComplete: () => puddle.destroy(),
     });
+
+    // Капли эликсира — короткие траектории во все стороны.
+    const drops = 7;
+    for (let i = 0; i < drops; i++) {
+      const drop = this.wG();
+      drop.fillStyle(color, 0.95);
+      drop.fillCircle(0, 0, 2.4);
+      drop.fillStyle(0xffffff, 0.6);
+      drop.fillCircle(-0.7, -0.7, 1);
+      drop.x = x;
+      drop.y = y - 4;
+      const angle = (Math.PI * 2 * i) / drops + Math.random() * 0.4;
+      const dist = 12 + Math.random() * 10;
+      this.tweens.add({
+        targets: drop,
+        x: x + Math.cos(angle) * dist,
+        y: y + Math.sin(angle) * dist + 6,
+        scale: 0.4,
+        alpha: 0,
+        duration: 480 + Math.random() * 80,
+        ease: 'Quad.Out',
+        onComplete: () => drop.destroy(),
+      });
+    }
+  }
+
+  // ───── визуал: эффекты атак ─────
+
+  /**
+   * Эффект атаки юнита. Для ближнего боя — арка-вспышка возле цели,
+   * для дальнего — короткая вспышка-«дульный» блик у атакующего и
+   * подёргивание модели в сторону цели через ThreeBattleLayer.
+   */
+  private renderAttackEffect(e: Extract<import('@/battle/types').BattleEvent, { kind: 'attack' }>) {
+    const dx = e.to.x - e.from.x;
+    const dy = e.to.y - e.from.y;
+    const angle = Math.atan2(dy, dx);
+    const attacker = e.attacker;
+
+    // Анимация в 3D: коротко толкнуть модель в сторону цели.
+    this.threeLayer?.attackAnim(attacker.id, angle);
+
+    if (e.ranged) {
+      // Дульный/тетивный блик у атакующего.
+      const muzzle = this.wG();
+      const color = attacker.type === 'mage' ? 0xb08fff : 0xfff58c;
+      muzzle.fillStyle(color, 0.95);
+      muzzle.fillCircle(0, 0, 5);
+      muzzle.fillStyle(0xffffff, 0.7);
+      muzzle.fillCircle(0, 0, 2.5);
+      muzzle.x = e.from.x + Math.cos(angle) * 6;
+      muzzle.y = e.from.y + Math.sin(angle) * 6 - 6;
+      this.tweens.add({
+        targets: muzzle,
+        scale: 1.7,
+        alpha: 0,
+        duration: 160,
+        ease: 'Quad.Out',
+        onComplete: () => muzzle.destroy(),
+      });
+    } else {
+      // Slash-арка возле цели (без линии до цели — никаких следов вдоль луча).
+      const slash = this.wG();
+      const slashColor = attacker.team === 'player' ? 0xb0d8ff : 0xffb0a0;
+      slash.lineStyle(2.5, slashColor, 0.95);
+      // Дугу рисуем в локальной системе и поворачиваем перпендикулярно к лучу удара.
+      slash.beginPath();
+      slash.arc(0, 0, 12, -1.0, 1.0);
+      slash.strokePath();
+      slash.lineStyle(1.4, 0xffffff, 0.85);
+      slash.beginPath();
+      slash.arc(0, 0, 9, -0.6, 0.6);
+      slash.strokePath();
+      slash.x = e.to.x;
+      slash.y = e.to.y;
+      slash.rotation = angle - Math.PI;
+      slash.scale = 0.6;
+      this.tweens.add({
+        targets: slash,
+        scale: 1.15,
+        alpha: 0,
+        duration: 220,
+        ease: 'Quad.Out',
+        onComplete: () => slash.destroy(),
+      });
+
+      // Маленькая искорка в точке удара.
+      const spark = this.wG();
+      spark.fillStyle(0xfff58c, 0.95);
+      spark.fillCircle(0, 0, 3);
+      spark.x = e.to.x;
+      spark.y = e.to.y;
+      this.tweens.add({
+        targets: spark,
+        scale: 1.8,
+        alpha: 0,
+        duration: 200,
+        onComplete: () => spark.destroy(),
+      });
+    }
   }
 
   // ───── визуал: снаряды ─────
@@ -1005,10 +1134,13 @@ export class ArenaScene extends Phaser.Scene {
   private handleProjectileHit(p: import('@/battle/types').Projectile) {
     const g = this.projectileViews.get(p.id);
     if (!g) return;
-    // Маленькая вспышка попадания.
+    // Маленькая вспышка попадания. Рисуем круг в локальном (0,0)
+    // и позиционируем графику — иначе scale-tween «отлетает» от точки.
     const flash = this.wG();
-    flash.fillStyle(0xffffff, 0.7);
-    flash.fillCircle(p.x, p.y, 7);
+    flash.fillStyle(p.kind === 'magic' ? 0xb08fff : 0xffd267, 0.85);
+    flash.fillCircle(0, 0, 6);
+    flash.x = p.x;
+    flash.y = p.y;
     this.tweens.add({
       targets: flash,
       scale: 1.8,
@@ -1025,9 +1157,12 @@ export class ArenaScene extends Phaser.Scene {
   private renderSpellEffect(code: SpellCode, x: number, y: number) {
     const stats = SPELL_STATS[code];
 
+    // Лёгкий 2D-марк для контекста (оставляем под 3D для контраста).
     const fillGfx = this.wG();
-    fillGfx.fillStyle(stats.color, 0.45);
-    fillGfx.fillCircle(x, y, stats.radius);
+    fillGfx.fillStyle(stats.color, 0.18);
+    fillGfx.fillCircle(0, 0, stats.radius);
+    fillGfx.x = x;
+    fillGfx.y = y;
     this.tweens.add({
       targets: fillGfx,
       alpha: 0,
@@ -1035,22 +1170,10 @@ export class ArenaScene extends Phaser.Scene {
       onComplete: () => fillGfx.destroy(),
     });
 
-    const ringState = { r: 0 };
-    const ring = this.wG();
-    this.tweens.add({
-      targets: ringState,
-      r: stats.radius * 1.15,
-      duration: 500,
-      ease: 'Quad.Out',
-      onUpdate: () => {
-        ring.clear();
-        ring.lineStyle(3, stats.color, 0.7);
-        ring.strokeCircle(x, y, ringState.r);
-      },
-      onComplete: () => ring.destroy(),
-    });
+    // Основной 3D-эффект — Фаербол / Лечение через ThreeBattleLayer.
+    this.threeLayer?.castSpellEffect(code, x, y);
 
-    if (stats.hostile) this.cameras.main.shake(180, 0.003);
+    if (stats.hostile) this.cameras.main.shake(220, 0.005);
   }
 }
 

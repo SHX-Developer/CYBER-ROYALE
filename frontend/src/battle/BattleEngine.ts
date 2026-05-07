@@ -338,6 +338,17 @@ export class BattleEngine {
 
   private applyAttack(attacker: Unit, victimUnit: Unit | null, victimTower: Tower | null) {
     const isRanged = attacker.range >= RANGED_THRESHOLD;
+    // Эмитим событие атаки — рендер использует для slash/muzzle-эффекта.
+    const target = victimUnit ?? victimTower;
+    if (target) {
+      this.emit({
+        kind: 'attack',
+        attacker,
+        from: { x: attacker.x, y: attacker.y },
+        to: { x: target.x, y: target.y },
+        ranged: isRanged,
+      });
+    }
     if (isRanged) {
       // Дальний юнит — пускает снаряд.
       if (victimTower) {
@@ -377,7 +388,19 @@ export class BattleEngine {
     if (unit.isDead) return;
     const destroyed = unit.takeDamage(amount);
     this.emit({ kind: 'unitDamaged', unit, amount });
-    if (destroyed) this.emit({ kind: 'unitDied', unit });
+    if (destroyed) {
+      this.emit({ kind: 'unitDied', unit });
+      // Пересчитываем waypoints всем нашим юнитам, кто целился в этого
+      // — чтобы они не «возвращались» к старой точке преследования, а сразу
+      // двигались к ближайшей живой башне.
+      for (const u of this.state.units) {
+        if (u.isDead || u === unit) continue;
+        if (u.lockedTarget?.kind === 'unit' && u.lockedTarget.id === unit.id) {
+          u.lockedTarget = null;
+          this.replanUnitWaypoints(u);
+        }
+      }
+    }
   }
 
   damageTower(tower: Tower, amount: number) {
@@ -390,10 +413,39 @@ export class BattleEngine {
       // Игрок-разрушитель — противоположная команда от team башни.
       this.state.towersDestroyed[opposite] += 1;
       this.emit({ kind: 'towerDestroyed', tower });
+
+      // Перемаршрутизация: юниты, шедшие к этой башне, теперь идут к
+      // ближайшей живой башне противника.
+      for (const u of this.state.units) {
+        if (u.isDead || u.team === tower.team) continue;
+        const wasTarget = u.lockedTarget?.kind === 'tower' && u.lockedTarget.id === tower.id;
+        if (wasTarget) u.lockedTarget = null;
+        this.replanUnitWaypoints(u);
+      }
+
       if (tower.type === 'king') {
         this.endGame(tower.team === 'enemy' ? 'won' : 'lost');
       }
     }
+  }
+
+  /**
+   * Заменяет waypoints юнита свежим путём от его текущей клетки до
+   * ближайшей живой вражеской башни. Используется после убийства цели,
+   * чтобы юнит не возвращался к устаревшей точке.
+   */
+  private replanUnitWaypoints(unit: Unit) {
+    const fromCell: Cell = cellFromPx(unit.x, unit.y);
+    const targetCell = this.pickEnemyTowerCell(unit.team, unit.lane, unit.x, unit.y);
+    const path = findPath(fromCell, targetCell);
+    const waypoints: Vec[] = pathToPixels(path);
+    // Перезаписываем waypoints через приватное мутирование — readonly здесь
+    // только декларативно; в рантайме это обычное поле.
+    (unit as unknown as { waypoints: Vec[] }).waypoints = waypoints;
+    unit.waypointIndex = 0;
+    unit.pursuitTargetId = null;
+    unit.pursuitWaypoints = [];
+    unit.pursuitWaypointIndex = 0;
   }
 
   addEnergy(team: Side, amount: number) {
@@ -431,8 +483,9 @@ export class BattleEngine {
     const x = spawnCell.col * TILE + TILE / 2;
     const y = spawnCell.row * TILE + TILE / 2;
 
-    // Целевая клетка — клетка ближайшей вражеской принцессы на той же стороне поля.
-    const targetCell = pickPrincessCell(team, lane);
+    // Цель спавна — ближайшая живая вражеская башня.
+    // Если боковая принцесса снесена, ведём юнита сразу на короля.
+    const targetCell = this.pickEnemyTowerCell(team, lane, x, y);
     const path = findPath(spawnCell, targetCell);
     const waypoints: Vec[] = pathToPixels(path);
 
@@ -490,9 +543,11 @@ export class BattleEngine {
   // ───── финал матча ─────
 
   private handleTimeout() {
+    // towersDestroyed[side] = сколько вражеских башен снесла команда `side`.
+    // Победа у того, кто разрушил больше.
     const { player, enemy } = this.state.towersDestroyed;
-    if (enemy > player) this.endGame('won');
-    else if (player > enemy) this.endGame('lost');
+    if (player > enemy) this.endGame('won');
+    else if (enemy > player) this.endGame('lost');
     else this.endGame('draw');
   }
 
@@ -500,6 +555,27 @@ export class BattleEngine {
     if (this.state.outcome) return;
     this.state.outcome = outcome;
     this.emit({ kind: 'gameOver', outcome });
+  }
+
+  /** Клетка ближайшей живой вражеской башни — для маршрутизации. */
+  private pickEnemyTowerCell(team: Side, lane: Lane, fromX: number, fromY: number): Cell {
+    const enemyTeam: Side = team === 'player' ? 'enemy' : 'player';
+    const alive = this.state.towers.filter((t) => t.team === enemyTeam && !t.isDestroyed);
+    if (alive.length === 0) return pickPrincessFallback(team, lane);
+
+    // Среди живых — берём ближайшую к фронту по той же дорожке либо общую ближайшую.
+    let best: Tower | null = null;
+    let bestDist = Infinity;
+    for (const t of alive) {
+      const d = Math.hypot(t.x - fromX, t.y - fromY);
+      if (d < bestDist) {
+        best = t;
+        bestDist = d;
+      }
+    }
+    if (!best) return pickPrincessFallback(team, lane);
+    // Возвращаем «верхнюю» клетку башни — pathfinding сам уведёт по дорогам.
+    return { col: best.rect.col + Math.floor(best.rect.w / 2), row: best.rect.row + Math.floor(best.rect.h / 2) };
   }
 
   // ───── создание стартового мира ─────
@@ -521,13 +597,11 @@ export class BattleEngine {
 export type { Vec };
 export const ARENA = { width: ARENA_WIDTH, height: ARENA_HEIGHT };
 
-/** Целевая клетка вражеской принцессы для маршрутизации юнита. */
-function pickPrincessCell(team: Side, lane: Lane): Cell {
+/** Резервная клетка принцессы (если все башни уже снесены — теоретически). */
+function pickPrincessFallback(team: Side, lane: Lane): Cell {
   if (team === 'player') {
-    // Игрок идёт к ВЕРХНИМ принцессам.
     return lane === 'left' ? { col: 1, row: 3 } : { col: COLS - 2, row: 3 };
   }
-  // Враг идёт к НИЖНИМ принцессам.
   return lane === 'left' ? { col: 1, row: ROWS - 4 } : { col: COLS - 2, row: ROWS - 4 };
 }
 

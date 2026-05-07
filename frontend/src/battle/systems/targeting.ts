@@ -1,10 +1,11 @@
 /**
  * Выбор цели юнитом. Чистая логика, без рендера.
  *
- * Приоритет (из Этапа 10):
- *   1) ближайший вражеский юнит в perception-радиусе
- *   2) ближайшая живая принцесса
- *   3) король
+ * Приоритет:
+ *   1) ближайший вражеский юнит в perception-радиусе (танк игнорирует юнитов
+ *      и идёт сразу к башням — он их главная угроза);
+ *   2) ближайшая живая ВРАЖЕСКАЯ башня (любого типа: если боковая снесена
+ *      и ближе король — атаковать короля).
  */
 import { TILE } from '@/game/arena';
 import type { Tower } from '@/game/tower';
@@ -35,6 +36,7 @@ export function pickTarget(
 ): AttackTarget | null {
   const perception = unit.range + PERCEPTION_BONUS;
 
+  // Танк игнорирует юнитов и идёт прямо на башни.
   if (unit.type !== 'tank') {
     let bestUnit: Unit | null = null;
     let bestUnitDist = Infinity;
@@ -49,26 +51,18 @@ export function pickTarget(
     if (bestUnit) return { kind: 'unit', ref: bestUnit };
   }
 
-  let bestPrincess: Tower | null = null;
-  let bestPrincessDist = Infinity;
-  let king: Tower | null = null;
-  let kingDist = Infinity;
-
+  // Ближайшая живая башня (princess или king — без приоритета).
+  let bestTower: Tower | null = null;
+  let bestTowerDist = Infinity;
   for (const t of towers) {
     if (t.team === unit.team || t.isDestroyed) continue;
     const half = towerHalfSize(t);
     const d = Math.hypot(unit.x - t.x, unit.y - t.y) - half;
-    if (t.type === 'princess' && d < bestPrincessDist) {
-      bestPrincess = t;
-      bestPrincessDist = d;
-    }
-    if (t.type === 'king' && d < kingDist) {
-      king = t;
-      kingDist = d;
+    if (d < bestTowerDist) {
+      bestTower = t;
+      bestTowerDist = d;
     }
   }
-
-  if (bestPrincess) return { kind: 'tower', ref: bestPrincess };
-  if (king) return { kind: 'tower', ref: king };
+  if (bestTower) return { kind: 'tower', ref: bestTower };
   return null;
 }
