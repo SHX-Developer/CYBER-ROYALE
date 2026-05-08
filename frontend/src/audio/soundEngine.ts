@@ -21,6 +21,11 @@ export type SoundCode =
   | 'meleeHit'
   | 'rangedShoot'
   | 'magicShoot'
+  | 'bombShoot'
+  | 'frostShoot'
+  | 'lightningShoot'
+  | 'pulseShoot'
+  | 'holyShoot'
   | 'projectileHit'
   | 'unitDeath'
   | 'towerHit'
@@ -41,6 +46,11 @@ const THROTTLE_MS: Partial<Record<SoundCode, number>> = {
   meleeHit: 55,
   rangedShoot: 55,
   magicShoot: 55,
+  bombShoot: 90,
+  frostShoot: 70,
+  lightningShoot: 85,
+  pulseShoot: 50,
+  holyShoot: 70,
   projectileHit: 50,
   towerHit: 80,
   unitSpawn: 60,
@@ -255,6 +265,30 @@ const SOUND_PLAYERS: Record<SoundCode, SoundPlayer> = {
     tone(ctx, out, t, 950, 0.18, 'sine', 0.18);
     tone(ctx, out, t, 1380, 0.18, 'triangle', 0.12);
     sweep(ctx, out, t + 0.02, 1380, 1700, 0.12, 'sine', 0.08);
+  },
+  bombShoot: (ctx, out, t) => {
+    tone(ctx, out, t, 130, 0.16, 'square', 0.22);
+    noise(ctx, out, t, 0.12, 520, 0.7, 0.18);
+    sweep(ctx, out, t + 0.02, 240, 110, 0.18, 'sawtooth', 0.16);
+  },
+  frostShoot: (ctx, out, t) => {
+    sweep(ctx, out, t, 1300, 780, 0.18, 'triangle', 0.14);
+    tone(ctx, out, t + 0.03, 1760, 0.12, 'sine', 0.1);
+    noise(ctx, out, t, 0.14, 3600, 1.4, 0.045);
+  },
+  lightningShoot: (ctx, out, t) => {
+    sweep(ctx, out, t, 1800, 420, 0.12, 'sawtooth', 0.2);
+    tone(ctx, out, t + 0.02, 90, 0.1, 'square', 0.18);
+    noise(ctx, out, t, 0.08, 2600, 0.9, 0.12);
+  },
+  pulseShoot: (ctx, out, t) => {
+    tone(ctx, out, t, 980, 0.055, 'square', 0.13);
+    tone(ctx, out, t + 0.035, 1220, 0.055, 'triangle', 0.11);
+  },
+  holyShoot: (ctx, out, t) => {
+    tone(ctx, out, t, 659.25, 0.22, 'sine', 0.13);
+    tone(ctx, out, t + 0.04, 987.77, 0.2, 'triangle', 0.1);
+    sweep(ctx, out, t + 0.02, 880, 1320, 0.18, 'sine', 0.07);
   },
   projectileHit: (ctx, out, t) => {
     // Звон попадания.

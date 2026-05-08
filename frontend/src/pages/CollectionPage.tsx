@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import CardTile from '@/components/CardTile';
 import { fetchCards, type Card } from '@/api/cards';
+import {
+  ALL_CARD_CODES,
+  CARDS,
+  DECK_SIZE,
+  useBattleStore,
+  type CardCode,
+} from '@/store/battleStore';
+import { UNIT_STATS, type UnitType } from '@/game/unit';
+import { SPELL_STATS, type SpellCode } from '@/game/spells';
 
 type Filter = 'all' | 'UNIT' | 'SPELL';
 
@@ -10,6 +19,10 @@ export default function CollectionPage() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Card | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
+  const [swapFrom, setSwapFrom] = useState<number | null>(null);
+  const deck = useBattleStore((s) => s.deck);
+  const toggleDeckCard = useBattleStore((s) => s.toggleDeckCard);
+  const moveDeckCard = useBattleStore((s) => s.moveDeckCard);
 
   useEffect(() => {
     fetchCards()
@@ -23,16 +36,82 @@ export default function CollectionPage() {
       });
   }, []);
 
+  const mergedCards = useMemo(() => mergeCards(cards), [cards]);
+
   const visible = useMemo(() => {
-    if (filter === 'all') return cards;
-    return cards.filter((c) => c.type === filter);
-  }, [cards, filter]);
+    if (filter === 'all') return mergedCards;
+    return mergedCards.filter((c) => c.type === filter);
+  }, [mergedCards, filter]);
+
+  const deckCards = useMemo(
+    () => deck.map((code) => mergedCards.find((card) => card.code === code)).filter(Boolean) as Card[],
+    [deck, mergedCards],
+  );
+
+  const onDeckSlotClick = (index: number) => {
+    if (index >= deck.length) return;
+    if (swapFrom == null) {
+      setSwapFrom(index);
+      return;
+    }
+    if (swapFrom !== index) moveDeckCard(swapFrom, index);
+    setSwapFrom(null);
+  };
 
   return (
     <div style={page}>
       <header style={header}>
-        <h2 style={title}>Коллекция {cards.length ? `(${cards.length})` : ''}</h2>
+        <h2 style={title}>Коллекция {mergedCards.length ? `(${mergedCards.length})` : ''}</h2>
       </header>
+
+      <section style={deckPanel}>
+        <div style={deckHeader}>
+          <div style={deckTitle}>Моя колода</div>
+          <div style={{ ...deckCount, color: deck.length === DECK_SIZE ? '#98f5c1' : '#ffd267' }}>
+            {deck.length}/{DECK_SIZE}
+          </div>
+        </div>
+        <div style={deckGrid}>
+          {Array.from({ length: DECK_SIZE }).map((_, index) => {
+            const card = deckCards[index];
+            const active = swapFrom === index;
+            return (
+              <button
+                key={index}
+                type="button"
+                draggable={Boolean(card)}
+                onClick={() => onDeckSlotClick(index)}
+                onDragStart={(e) => {
+                  if (!card) return;
+                  e.dataTransfer.setData('text/plain', String(index));
+                }}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const from = Number(e.dataTransfer.getData('text/plain'));
+                  if (Number.isFinite(from)) moveDeckCard(from, index);
+                  setSwapFrom(null);
+                }}
+                style={{
+                  ...deckSlot,
+                  borderColor: active ? '#ffd267' : card ? '#3a4358' : '#2a3142',
+                  background: active ? '#2a2532' : card ? '#151a25' : '#10141d',
+                }}
+              >
+                {card ? (
+                  <>
+                    <span style={slotCost}>{card.energyCost}</span>
+                    <span style={slotIcon}>{card.icon}</span>
+                    <span style={slotName}>{card.name}</span>
+                  </>
+                ) : (
+                  <span style={emptySlot}>+</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       <div style={filters}>
         <FilterBtn active={filter === 'all'} onClick={() => setFilter('all')}>
@@ -48,13 +127,22 @@ export default function CollectionPage() {
 
       {status === 'loading' && <div style={hint}>Загрузка карт…</div>}
       {status === 'error' && (
-        <div style={{ ...hint, color: '#ff8585' }}>Не удалось загрузить карты: {error}</div>
+        <div style={{ ...hint, color: '#ff8585' }}>
+          Не удалось загрузить карты с backend: {error}. Показываю локальный каталог.
+        </div>
       )}
 
-      {status === 'ok' && (
+      {(status === 'ok' || status === 'error') && (
         <div style={grid}>
           {visible.map((card) => (
-            <CardTile key={card.id} card={card} onClick={() => setSelected(card)} />
+            <CardTile
+              key={card.code}
+              card={card}
+              selected={deck.includes(card.code as CardCode)}
+              disabled={!deck.includes(card.code as CardCode) && deck.length >= DECK_SIZE}
+              onClick={() => toggleDeckCard(card.code as CardCode)}
+              onInfo={() => setSelected(card)}
+            />
           ))}
         </div>
       )}
@@ -62,6 +150,81 @@ export default function CollectionPage() {
       {selected && <CardModal card={selected} onClose={() => setSelected(null)} />}
     </div>
   );
+}
+
+function mergeCards(remote: Card[]): Card[] {
+  const byCode = new Map(remote.map((card) => [card.code, card]));
+  for (const code of ALL_CARD_CODES) {
+    if (!byCode.has(code)) byCode.set(code, buildLocalCard(code));
+  }
+  return ALL_CARD_CODES.map((code) => byCode.get(code)).filter(Boolean) as Card[];
+}
+
+function buildLocalCard(code: CardCode): Card {
+  const def = CARDS[code];
+  if (def.kind === 'spell') {
+    const stats = SPELL_STATS[code as SpellCode];
+    return {
+      id: `local-${code}`,
+      code,
+      name: def.name,
+      type: 'SPELL',
+      energyCost: def.energyCost,
+      hp: null,
+      damage: stats.unitImpact,
+      attackSpeed: null,
+      range: pxToCells(stats.radius),
+      moveSpeed: null,
+      description:
+        code === 'heal'
+          ? 'Лечит союзников в области несколько секунд.'
+          : 'Наносит урон юнитам и башням в области.',
+      icon: def.icon,
+    };
+  }
+
+  const stats = UNIT_STATS[code as UnitType];
+  return {
+    id: `local-${code}`,
+    code,
+    name: def.name,
+    type: 'UNIT',
+    energyCost: def.energyCost,
+    hp: stats.maxHp,
+    damage: stats.damage,
+    attackSpeed: stats.attackSpeed,
+    range: pxToCells(stats.range),
+    moveSpeed: pxToCells(stats.moveSpeed),
+    description: unitDescription(code),
+    icon: def.icon,
+  };
+}
+
+function pxToCells(value: number) {
+  return Math.round((value / 40) * 10) / 10;
+}
+
+function unitDescription(code: CardCode): string {
+  switch (code) {
+    case 'lancer':
+      return 'Боец ближнего боя с увеличенной дистанцией удара.';
+    case 'guardian':
+      return 'Средний танк для удержания линии.';
+    case 'bombardier':
+      return 'Дальний взрывной урон против плотных атак.';
+    case 'frost_witch':
+      return 'Магический дальний урон с ледяными эффектами.';
+    case 'stormcaller':
+      return 'Дорогой дальний юнит с сильным ударом молнией.';
+    case 'drone':
+      return 'Быстрый дешёвый стрелок для давления.';
+    case 'berserker':
+      return 'Очень быстро атакует в ближнем бою.';
+    case 'priest':
+      return 'Дешёвый дальний юнит поддержки.';
+    default:
+      return CARDS[code].kind === 'unit' ? 'Боевой юнит для арены.' : '';
+  }
 }
 
 function FilterBtn({
@@ -147,6 +310,92 @@ const title: React.CSSProperties = {
 const filters: React.CSSProperties = {
   display: 'flex',
   gap: 8,
+};
+
+const deckPanel: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 10,
+  padding: 12,
+  borderRadius: 8,
+  border: '1px solid #2a3142',
+  background: '#0f1320',
+};
+
+const deckHeader: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+};
+
+const deckTitle: React.CSSProperties = {
+  fontSize: 13,
+  fontWeight: 800,
+  letterSpacing: 0,
+};
+
+const deckCount: React.CSSProperties = {
+  fontSize: 13,
+  fontWeight: 800,
+  fontVariantNumeric: 'tabular-nums',
+};
+
+const deckGrid: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+  gap: 8,
+};
+
+const deckSlot: React.CSSProperties = {
+  position: 'relative',
+  minWidth: 0,
+  minHeight: 78,
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 4,
+  padding: '8px 6px 7px',
+  borderRadius: 8,
+  border: '1px solid #2a3142',
+  color: '#e7ecf3',
+  cursor: 'grab',
+  textAlign: 'center',
+};
+
+const slotCost: React.CSSProperties = {
+  position: 'absolute',
+  top: 4,
+  left: 4,
+  width: 20,
+  height: 20,
+  borderRadius: 10,
+  display: 'grid',
+  placeItems: 'center',
+  background: '#ffd267',
+  color: '#121212',
+  fontSize: 11,
+  fontWeight: 900,
+};
+
+const slotIcon: React.CSSProperties = {
+  fontSize: 24,
+  lineHeight: 1,
+};
+
+const slotName: React.CSSProperties = {
+  width: '100%',
+  minHeight: 26,
+  display: 'block',
+  overflow: 'hidden',
+  fontSize: 10,
+  fontWeight: 700,
+  lineHeight: 1.15,
+};
+
+const emptySlot: React.CSSProperties = {
+  fontSize: 24,
+  opacity: 0.35,
 };
 
 const filterBtn: React.CSSProperties = {

@@ -105,7 +105,7 @@ export class ArenaScene extends Phaser.Scene {
 
     this.engine = new BattleEngine();
     this.matchStartedAt = this.time.now;
-    this.botDeck = [...STARTER_DECK];
+    this.botDeck = [...useBattleStore.getState().deck];
     this.towerViews.clear();
     this.unitViews.clear();
     this.projectileViews.clear();
@@ -234,7 +234,7 @@ export class ArenaScene extends Phaser.Scene {
       case 'attack':
         this.renderAttackEffect(e);
         if (e.ranged) {
-          playSound(e.attacker.type === 'mage' ? 'magicShoot' : 'rangedShoot');
+          playSound(rangedSoundForUnit(e.attacker.type));
         } else {
           playSound('meleeHit');
         }
@@ -1109,7 +1109,7 @@ export class ArenaScene extends Phaser.Scene {
     if (e.ranged) {
       // Дульный/тетивный блик у атакующего.
       const muzzle = this.wG();
-      const color = attacker.type === 'mage' ? 0xb08fff : 0xfff58c;
+      const color = attackColorForUnit(attacker.type);
       muzzle.fillStyle(color, 0.95);
       muzzle.fillCircle(0, 0, 5);
       muzzle.fillStyle(0xffffff, 0.7);
@@ -1178,6 +1178,41 @@ export class ArenaScene extends Phaser.Scene {
       g.fillCircle(0, 0, 4);
       g.fillStyle(0xffd267, 1);
       g.fillCircle(0, 0, 2);
+    } else if (p.kind === 'bomb') {
+      g.fillStyle(0xff7a3d, 0.18);
+      g.fillEllipse(-9, 0, 28, 10);
+      g.fillStyle(0x2a2020, 1);
+      g.fillCircle(0, 0, 5);
+      g.fillStyle(0xffd267, 0.9);
+      g.fillCircle(3, -3, 2);
+    } else if (p.kind === 'frost') {
+      g.fillStyle(0x9de8ff, 0.2);
+      g.fillEllipse(-9, 0, 26, 9);
+      g.lineStyle(2, 0xcaf6ff, 0.95);
+      g.strokeCircle(0, 0, 5);
+      g.fillStyle(0xffffff, 0.9);
+      g.fillCircle(0, 0, 2);
+    } else if (p.kind === 'lightning') {
+      g.lineStyle(3, 0xfff58c, 0.95);
+      g.lineBetween(-9, -3, -2, 2);
+      g.lineBetween(-2, 2, 3, -2);
+      g.lineBetween(3, -2, 10, 3);
+      g.lineStyle(1, 0xffffff, 0.9);
+      g.lineBetween(-7, -2, 8, 2);
+    } else if (p.kind === 'pulse') {
+      g.fillStyle(0x65c8ff, 0.18);
+      g.fillEllipse(-8, 0, 24, 8);
+      g.fillStyle(0x65c8ff, 0.9);
+      g.fillCircle(0, 0, 3.5);
+      g.lineStyle(1, 0xffffff, 0.75);
+      g.strokeCircle(0, 0, 6);
+    } else if (p.kind === 'holy') {
+      g.fillStyle(0xfff4b8, 0.18);
+      g.fillEllipse(-8, 0, 24, 8);
+      g.fillStyle(0xfff4b8, 0.95);
+      g.fillCircle(0, 0, 4);
+      g.fillStyle(0xffffff, 0.9);
+      g.fillCircle(0, 0, 2);
     } else {
       // Стрела — желто-коричневая капля.
       g.fillStyle(0xffd267, 0.16);
@@ -1198,9 +1233,10 @@ export class ArenaScene extends Phaser.Scene {
     // Маленькая вспышка попадания. Рисуем круг в локальном (0,0)
     // и позиционируем графику — иначе scale-tween «отлетает» от точки.
     const flash = this.wG();
-    flash.fillStyle(p.kind === 'magic' ? 0xb08fff : 0xffd267, 0.85);
+    const color = projectileColor(p.kind);
+    flash.fillStyle(color, 0.85);
     flash.fillCircle(0, 0, 6);
-    flash.lineStyle(1.6, p.kind === 'magic' ? 0xd8c7ff : 0xfff0b0, 0.9);
+    flash.lineStyle(1.6, projectileLightColor(p.kind), 0.9);
     flash.strokeCircle(0, 0, 9);
     flash.x = p.x;
     flash.y = p.y;
@@ -1213,7 +1249,7 @@ export class ArenaScene extends Phaser.Scene {
     });
     for (let i = 0; i < 5; i++) {
       const shard = this.wG();
-      shard.fillStyle(p.kind === 'magic' ? 0xb08fff : 0xffd267, 0.75);
+      shard.fillStyle(color, 0.75);
       shard.fillCircle(0, 0, 1.6);
       shard.x = p.x;
       shard.y = p.y;
@@ -1311,6 +1347,84 @@ function colorForTile(t: import('./tiles').TileType, row: number): number | null
       return row < ROWS / 2 ? ARENA_COLORS.enemyZone : ARENA_COLORS.playerZone;
     case 'blocked':
       return 0x222222;
+  }
+}
+
+function rangedSoundForUnit(
+  type: UnitType,
+): 'rangedShoot' | 'magicShoot' | 'bombShoot' | 'frostShoot' | 'lightningShoot' | 'pulseShoot' | 'holyShoot' {
+  switch (type) {
+    case 'mage':
+      return 'magicShoot';
+    case 'bombardier':
+      return 'bombShoot';
+    case 'frost_witch':
+      return 'frostShoot';
+    case 'stormcaller':
+      return 'lightningShoot';
+    case 'drone':
+      return 'pulseShoot';
+    case 'priest':
+      return 'holyShoot';
+    default:
+      return 'rangedShoot';
+  }
+}
+
+function attackColorForUnit(type: UnitType): number {
+  switch (type) {
+    case 'mage':
+      return 0xb08fff;
+    case 'bombardier':
+      return 0xff7a3d;
+    case 'frost_witch':
+      return 0x9de8ff;
+    case 'stormcaller':
+      return 0xfff58c;
+    case 'drone':
+      return 0x65c8ff;
+    case 'priest':
+      return 0xfff4b8;
+    default:
+      return 0xffd267;
+  }
+}
+
+function projectileColor(kind: import('@/battle/types').Projectile['kind']): number {
+  switch (kind) {
+    case 'magic':
+      return 0xb08fff;
+    case 'bomb':
+      return 0xff7a3d;
+    case 'frost':
+      return 0x9de8ff;
+    case 'lightning':
+      return 0xfff58c;
+    case 'pulse':
+      return 0x65c8ff;
+    case 'holy':
+      return 0xfff4b8;
+    default:
+      return 0xffd267;
+  }
+}
+
+function projectileLightColor(kind: import('@/battle/types').Projectile['kind']): number {
+  switch (kind) {
+    case 'magic':
+      return 0xd8c7ff;
+    case 'bomb':
+      return 0xffd0a0;
+    case 'frost':
+      return 0xe7fbff;
+    case 'lightning':
+      return 0xffffff;
+    case 'pulse':
+      return 0xc8f0ff;
+    case 'holy':
+      return 0xffffff;
+    default:
+      return 0xfff0b0;
   }
 }
 

@@ -644,7 +644,16 @@ export class ThreeBattleLayer {
       if (model.body) model.body.position.y = model.bodyBaseY + bob;
       if (model.aura) {
         const pulse = 1 + Math.sin(now / 260 + unit.x * 0.03) * 0.045;
-        const size = unit.type === 'tank' ? 1.45 : unit.type === 'squad' ? 1.15 : 1;
+        const size =
+          unit.type === 'tank'
+            ? 1.45
+            : unit.type === 'guardian'
+              ? 1.25
+              : unit.type === 'squad'
+                ? 1.15
+                : unit.type === 'drone'
+                  ? 0.9
+                  : 1;
         model.aura.scale.setScalar(size * pulse);
         const mat = model.aura.material as THREE.MeshBasicMaterial;
         mat.opacity = unit.state === 'moving' ? 0.18 : 0.13;
@@ -1045,6 +1054,183 @@ export class ThreeBattleLayer {
         weapon = staff;
         break;
       }
+      case 'lancer': {
+        buildHumanoid(1.02, bodyMat, trimMat, skinMat);
+        const spear = new THREE.Group();
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 20, 10), woodMat);
+        shaft.position.y = -10;
+        shaft.castShadow = true;
+        parts.push(shaft);
+        spear.add(shaft);
+        const tip = new THREE.Mesh(new THREE.ConeGeometry(1.5, 4.5, 12), metalMat);
+        tip.position.y = -21.5;
+        tip.castShadow = true;
+        parts.push(tip);
+        spear.add(tip);
+        spear.rotation.z = -0.2;
+        armRight!.add(spear);
+        weapon = spear;
+        const crest = add(new THREE.Mesh(new THREE.ConeGeometry(2.4, 3.8, 12), trimMat), body!);
+        crest.position.y = 11.8;
+        break;
+      }
+      case 'guardian': {
+        buildHumanoid(1.35, bodyMat, darkMat, skinMat);
+        const towerShield = new THREE.Mesh(new THREE.BoxGeometry(8, 13, 1.5), trimMat);
+        towerShield.position.set(0, -7, 1.8);
+        towerShield.castShadow = true;
+        parts.push(towerShield);
+        armLeft!.add(towerShield);
+        const mace = new THREE.Group();
+        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 12, 10), woodMat);
+        handle.position.y = -8;
+        parts.push(handle);
+        mace.add(handle);
+        const head = new THREE.Mesh(new THREE.DodecahedronGeometry(2.8), metalMat);
+        head.position.y = -15;
+        head.castShadow = true;
+        parts.push(head);
+        mace.add(head);
+        armRight!.add(mace);
+        weapon = mace;
+        break;
+      }
+      case 'bombardier': {
+        buildHumanoid(0.95, bodyMat, trimMat, skinMat);
+        const pack = add(new THREE.Mesh(new THREE.BoxGeometry(5.5, 7, 3), darkMat), body!);
+        pack.position.set(0, 0, -2.8);
+        const bomb = new THREE.Mesh(new THREE.SphereGeometry(3, 16, 12), this.getCachedMat(0x28242a, 0.7, 0.25));
+        bomb.position.set(0, -7, 0.8);
+        bomb.castShadow = true;
+        parts.push(bomb);
+        armRight!.add(bomb);
+        const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 3, 6), goldMat);
+        fuse.position.set(1.4, -4.4, 0.8);
+        fuse.rotation.z = 0.55;
+        parts.push(fuse);
+        armRight!.add(fuse);
+        weapon = bomb;
+        break;
+      }
+      case 'frost_witch': {
+        const frostMat = this.getCachedMat(0x83d8ff, 0.42, 0.22);
+        buildHumanoid(0.98, frostMat, trimMat, this.getCachedMat(0xd8f8ff, 0.55, 0.04));
+        const crown = new THREE.Group();
+        for (let i = 0; i < 5; i++) {
+          const spike = new THREE.Mesh(new THREE.ConeGeometry(0.7, 4.2, 8), frostMat);
+          spike.position.set((i - 2) * 1.15, 12 + Math.abs(i - 2) * -0.25, 0);
+          spike.castShadow = true;
+          parts.push(spike);
+          crown.add(spike);
+        }
+        body!.add(crown);
+        const wand = new THREE.Group();
+        const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 15, 8), woodMat);
+        stick.position.y = -8;
+        parts.push(stick);
+        wand.add(stick);
+        const ice = new THREE.Mesh(new THREE.OctahedronGeometry(2.2), frostMat);
+        ice.position.y = -0.5;
+        ice.castShadow = true;
+        parts.push(ice);
+        wand.add(ice);
+        armRight!.add(wand);
+        weapon = wand;
+        break;
+      }
+      case 'stormcaller': {
+        const stormMat = this.getCachedMat(0x36465f, 0.58, 0.35);
+        buildHumanoid(1.08, stormMat, goldMat, skinMat);
+        const coil = new THREE.Mesh(new THREE.TorusGeometry(3.6, 0.45, 8, 24), goldMat);
+        coil.position.y = 10.5;
+        coil.rotation.x = Math.PI / 2;
+        coil.castShadow = true;
+        parts.push(coil);
+        body!.add(coil);
+        const rod = new THREE.Group();
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 18, 10), metalMat);
+        shaft.position.y = -9;
+        parts.push(shaft);
+        rod.add(shaft);
+        const orb = new THREE.Mesh(new THREE.SphereGeometry(2.2, 16, 12), goldMat);
+        orb.position.y = 0;
+        orb.castShadow = true;
+        parts.push(orb);
+        rod.add(orb);
+        armRight!.add(rod);
+        weapon = rod;
+        break;
+      }
+      case 'drone': {
+        const shellMat = this.getCachedMat(unit.team === 'player' ? 0x4ba6dc : 0xdc4b62, 0.42, 0.55);
+        body = new THREE.Group();
+        bodyBaseY = 13;
+        body.position.y = bodyBaseY;
+        group.add(body);
+        const core = add(new THREE.Mesh(new THREE.SphereGeometry(4.6, 20, 14), shellMat), body);
+        core.scale.set(1.25, 0.55, 1);
+        const lens = add(new THREE.Mesh(new THREE.SphereGeometry(1.3, 12, 8), trimMat), body);
+        lens.position.set(0, 0, 4.2);
+        for (const sx of [-1, 1]) {
+          const wing = add(new THREE.Mesh(new THREE.BoxGeometry(7, 0.8, 2.2), darkMat), body);
+          wing.position.set(sx * 5.2, 0.2, 0);
+          const rotor = add(new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.25, 6, 18), trimMat), body);
+          rotor.position.set(sx * 8.4, 0.35, 0);
+          rotor.rotation.x = Math.PI / 2;
+        }
+        weapon = core;
+        break;
+      }
+      case 'berserker': {
+        buildHumanoid(1.03, bodyMat, darkMat, this.getCachedMat(0xffc0a0, 0.62, 0.04));
+        const hair = new THREE.Mesh(new THREE.ConeGeometry(3.2, 4.5, 12), this.getCachedMat(0xff5a3d, 0.6, 0.08));
+        hair.position.y = 12.2;
+        hair.castShadow = true;
+        parts.push(hair);
+        body!.add(hair);
+        const makeAxe = () => {
+          const axe = new THREE.Group();
+          const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 10, 8), woodMat);
+          handle.position.y = -7;
+          parts.push(handle);
+          axe.add(handle);
+          const blade = new THREE.Mesh(new THREE.BoxGeometry(4.2, 3, 0.7), metalMat);
+          blade.position.set(1.6, -12, 0);
+          blade.castShadow = true;
+          parts.push(blade);
+          axe.add(blade);
+          return axe;
+        };
+        const leftAxe = makeAxe();
+        armLeft!.add(leftAxe);
+        const rightAxe = makeAxe();
+        armRight!.add(rightAxe);
+        weapon = rightAxe;
+        break;
+      }
+      case 'priest': {
+        const robeMat = this.getCachedMat(0xf2e6b8, 0.62, 0.08);
+        buildHumanoid(0.96, robeMat, goldMat, skinMat);
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(3, 0.28, 8, 24), goldMat);
+        halo.position.y = 13.6;
+        halo.rotation.x = Math.PI / 2;
+        parts.push(halo);
+        body!.add(halo);
+        const bell = new THREE.Group();
+        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 7, 8), woodMat);
+        handle.position.y = -5;
+        parts.push(handle);
+        bell.add(handle);
+        const cup = new THREE.Mesh(new THREE.ConeGeometry(2.2, 3.6, 16), goldMat);
+        cup.position.y = -9.8;
+        cup.rotation.x = Math.PI;
+        cup.castShadow = true;
+        parts.push(cup);
+        bell.add(cup);
+        armRight!.add(bell);
+        weapon = bell;
+        break;
+      }
     }
 
     const aura = new THREE.Mesh(
@@ -1334,5 +1520,7 @@ function worldToThree(x: number, y: number): THREE.Vector3 {
 }
 
 function unitLift(type: UnitType): number {
-  return type === 'tank' ? 1.5 : 2.2;
+  if (type === 'tank') return 1.5;
+  if (type === 'drone') return 8.5;
+  return 2.2;
 }

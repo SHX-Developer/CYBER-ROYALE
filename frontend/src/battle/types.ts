@@ -31,8 +31,8 @@ export interface Projectile {
   /** Запасная фиксированная точка попадания (если цель ушла). */
   fallbackX: number;
   fallbackY: number;
-  /** Что показывать визуально: 'arrow' / 'magic'. */
-  kind: 'arrow' | 'magic';
+  /** Что показывать визуально. */
+  kind: 'arrow' | 'magic' | 'bomb' | 'frost' | 'lightning' | 'pulse' | 'holy';
 }
 
 /** Зона лечения — действует N миллисекунд, тикает периодически. */

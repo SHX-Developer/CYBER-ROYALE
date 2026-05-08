@@ -8,7 +8,21 @@
  */
 import type { Lane, Side, Vec } from './arena';
 
-export type UnitType = 'warrior' | 'archer' | 'tank' | 'assassin' | 'squad' | 'mage';
+export type UnitType =
+  | 'warrior'
+  | 'archer'
+  | 'tank'
+  | 'assassin'
+  | 'squad'
+  | 'mage'
+  | 'lancer'
+  | 'guardian'
+  | 'bombardier'
+  | 'frost_witch'
+  | 'stormcaller'
+  | 'drone'
+  | 'berserker'
+  | 'priest';
 export type UnitTarget = 'ground' | 'air' | 'any';
 export type UnitState = 'idle' | 'moving' | 'attacking' | 'dead';
 
@@ -25,9 +39,9 @@ export interface UnitStats {
 
 export const UNIT_STATS: Record<UnitType, UnitStats> = {
   warrior: {
-    maxHp: 500,
-    damage: 80,
-    attackSpeed: 1,
+    maxHp: 520,
+    damage: 78,
+    attackSpeed: 1.05,
     range: 40,
     moveSpeed: 60,
     target: 'ground',
@@ -35,7 +49,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
   },
   archer: {
     maxHp: 250,
-    damage: 60,
+    damage: 58,
     attackSpeed: 1,
     range: 125,
     moveSpeed: 60,
@@ -43,18 +57,18 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     radius: 12,
   },
   tank: {
-    maxHp: 1500,
-    damage: 100,
-    attackSpeed: 1.5,
+    maxHp: 1450,
+    damage: 105,
+    attackSpeed: 1.6,
     range: 40,
     moveSpeed: 30,
     target: 'ground',
     radius: 18,
   },
   assassin: {
-    maxHp: 200,
-    damage: 90,
-    attackSpeed: 0.8,
+    maxHp: 220,
+    damage: 88,
+    attackSpeed: 0.75,
     range: 40,
     moveSpeed: 108, // быстрый: ~1.8 tiles/sec * 60
     target: 'ground',
@@ -63,8 +77,8 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
   squad: {
     // На MVP — один объединённый юнит. Когда появится механика отрядов,
     // карта будет спавнить 4 мини-юнита с этими полями.
-    maxHp: 600,
-    damage: 60,
+    maxHp: 560,
+    damage: 62,
     attackSpeed: 1.1,
     range: 40,
     moveSpeed: 72,
@@ -72,13 +86,85 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     radius: 14,
   },
   mage: {
-    maxHp: 350,
-    damage: 120,
+    maxHp: 360,
+    damage: 112,
     attackSpeed: 1.4,
     range: 160,
     moveSpeed: 54,
     target: 'any',
     radius: 14,
+  },
+  lancer: {
+    maxHp: 460,
+    damage: 95,
+    attackSpeed: 1.15,
+    range: 62,
+    moveSpeed: 66,
+    target: 'ground',
+    radius: 13,
+  },
+  guardian: {
+    maxHp: 900,
+    damage: 70,
+    attackSpeed: 1.3,
+    range: 42,
+    moveSpeed: 42,
+    target: 'ground',
+    radius: 16,
+  },
+  bombardier: {
+    maxHp: 320,
+    damage: 150,
+    attackSpeed: 1.8,
+    range: 135,
+    moveSpeed: 45,
+    target: 'ground',
+    radius: 13,
+  },
+  frost_witch: {
+    maxHp: 330,
+    damage: 70,
+    attackSpeed: 1.25,
+    range: 145,
+    moveSpeed: 54,
+    target: 'any',
+    radius: 13,
+  },
+  stormcaller: {
+    maxHp: 420,
+    damage: 145,
+    attackSpeed: 1.7,
+    range: 165,
+    moveSpeed: 48,
+    target: 'any',
+    radius: 14,
+  },
+  drone: {
+    maxHp: 170,
+    damage: 45,
+    attackSpeed: 0.9,
+    range: 105,
+    moveSpeed: 96,
+    target: 'any',
+    radius: 10,
+  },
+  berserker: {
+    maxHp: 420,
+    damage: 65,
+    attackSpeed: 0.65,
+    range: 40,
+    moveSpeed: 90,
+    target: 'ground',
+    radius: 13,
+  },
+  priest: {
+    maxHp: 300,
+    damage: 50,
+    attackSpeed: 1.2,
+    range: 120,
+    moveSpeed: 54,
+    target: 'any',
+    radius: 12,
   },
 };
 

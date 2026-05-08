@@ -154,7 +154,7 @@ export class BattleEngine {
 
       // На принцессе сидит лучница — она стреляет стрелой.
       // Король — магической пушкой.
-      const projKind: 'arrow' | 'magic' = tower.type === 'princess' ? 'arrow' : 'magic';
+      const projKind: Projectile['kind'] = tower.type === 'princess' ? 'arrow' : 'magic';
 
       this.emit({ kind: 'towerAttack', tower });
       this.spawnProjectile({
@@ -380,7 +380,7 @@ export class BattleEngine {
           targetTowerId: victimTower.id,
           fallbackX: victimTower.x,
           fallbackY: victimTower.y,
-          kind: attacker.type === 'mage' ? 'magic' : 'arrow',
+          kind: projectileKindForUnit(attacker.type),
         });
       } else if (victimUnit) {
         this.spawnProjectile({
@@ -391,7 +391,7 @@ export class BattleEngine {
           targetUnitId: victimUnit.id,
           fallbackX: victimUnit.x,
           fallbackY: victimUnit.y,
-          kind: attacker.type === 'mage' ? 'magic' : 'arrow',
+          kind: projectileKindForUnit(attacker.type),
         });
       }
       return;
@@ -677,6 +677,25 @@ export class BattleEngine {
           rect: l.rect,
         }),
     );
+  }
+}
+
+function projectileKindForUnit(type: UnitType): Projectile['kind'] {
+  switch (type) {
+    case 'mage':
+      return 'magic';
+    case 'bombardier':
+      return 'bomb';
+    case 'frost_witch':
+      return 'frost';
+    case 'stormcaller':
+      return 'lightning';
+    case 'drone':
+      return 'pulse';
+    case 'priest':
+      return 'holy';
+    default:
+      return 'arrow';
   }
 }
 
