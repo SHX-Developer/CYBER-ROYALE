@@ -66,10 +66,17 @@ interface UnitView {
 
 /** Высота «корпуса» над землёй — псевдо-3D. */
 const UNIT_LIFT = 5;
+/**
+ * Жёсткий потолок render-DPR. На retina-iPhone (DPR=3) рендер шёл в 1080×2400
+ * каждый кадр → телефон грелся. 1.5 — золотая середина: чёткая картинка,
+ * но в 4 раза меньше пикселей на кадр.
+ */
 const RENDER_DPR = Math.min(
-  3,
+  1.5,
   Math.max(1, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1),
 );
+/** Целевой FPS — 30. Halves CPU/GPU usage по сравнению с дефолтными 60. */
+const TARGET_FPS = 30;
 
 export class ArenaScene extends Phaser.Scene {
   private engine!: BattleEngine;
@@ -170,16 +177,20 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
+  /** Аккумулятор для throttle-а тяжёлых апдейтов (turret rotation / Three layer sync). */
+  private heavyAccumMs = 0;
+
   override update(_time: number, deltaMs: number) {
     if (this.engine.state.outcome) return;
     // Плавный регэн: 1 эликсир каждые ENERGY_REGEN_INTERVAL_MS, дробно за кадр.
-    const regenPerSec = 1000 / ENERGY_REGEN_INTERVAL_MS; // эликсиров в секунду
+    const regenPerSec = 1000 / ENERGY_REGEN_INTERVAL_MS;
     const dEnergy = (regenPerSec * deltaMs) / 1000;
     this.engine.addEnergy('player', dEnergy);
     this.engine.addEnergy('enemy', dEnergy);
 
     this.engine.tick(deltaMs);
-    // Синхронизируем визуал юнитов с актуальным состоянием.
+
+    // Синхронизируем визуал юнитов — двигается всё стабильно каждый кадр.
     for (const u of this.engine.state.units) {
       if (u.isDead) continue;
       this.updateUnitView(u);
@@ -198,17 +209,24 @@ export class ArenaScene extends Phaser.Scene {
       g.setData('px', p.x);
       g.setData('py', p.y);
     }
-    // Поворот турелей башен к цели.
-    for (const tower of this.engine.state.towers) {
-      if (tower.isDestroyed) continue;
-      const view = this.towerViews.get(tower.id);
-      if (!view) continue;
-      const target = this.engine.getTowerTarget(tower);
-      if (target) {
-        view.turret.rotation = Math.atan2(target.y - tower.y, target.x - tower.x);
+
+    // Three-слой синхронизируется КАЖДЫЙ кадр — иначе модели «прыгают».
+    this.threeLayer?.sync(this.engine.state.units, this.engine.state.towers);
+
+    // Турели — раз в 200мс, глаз не видит поворот чаще.
+    this.heavyAccumMs += deltaMs;
+    if (this.heavyAccumMs >= 200) {
+      this.heavyAccumMs = 0;
+      for (const tower of this.engine.state.towers) {
+        if (tower.isDestroyed) continue;
+        const view = this.towerViews.get(tower.id);
+        if (!view) continue;
+        const target = this.engine.getTowerTarget(tower);
+        if (target) {
+          view.turret.rotation = Math.atan2(target.y - tower.y, target.x - tower.x);
+        }
       }
     }
-    this.threeLayer?.sync(this.engine.state.units, this.engine.state.towers);
   }
 
   // ───── обработка событий движка ─────
@@ -657,7 +675,9 @@ export class ArenaScene extends Phaser.Scene {
 
     let phase = 0;
     this.time.addEvent({
-      delay: 60,
+      // ↓ 60ms (16 FPS обновлений воды) → 250ms (4 FPS). Глаз разницу не видит,
+      //   CPU/GPU нагрузка падает в ~4 раза для самой ресурсоёмкой анимации.
+      delay: 250,
       loop: true,
       callback: () => {
         const w = this.waterWaves;
@@ -961,7 +981,7 @@ export class ArenaScene extends Phaser.Scene {
     const view = this.unitViews.get(unit.id);
     if (!view) return;
 
-    // Walk-bob: при движении корпус слегка покачивается по Y синусоидой.
+    // Walk-bob — только пока юнит реально движется.
     const bob =
       unit.state === 'moving'
         ? Math.sin(this.time.now / 110 + unit.x * 0.05) * 1.5
@@ -973,23 +993,25 @@ export class ArenaScene extends Phaser.Scene {
     view.body.y = unit.y - UNIT_LIFT + bob;
     view.hpText.x = unit.x;
     view.hpText.y = unit.y - unit.radius - UNIT_LIFT - 8 + bob;
+
+    // HP-бар REDRAW ТОЛЬКО при изменении HP — ключевая экономия CPU.
+    // Раньше clear+2×fillRect выполнялись каждый кадр для каждого юнита.
     if (view.lastHp !== unit.hp) {
       view.hpText.setText(`${unit.hp}`);
+      const barW = unit.radius * 2;
+      const barH = 2;
+      const fill = unit.team === 'player' ? ARENA_COLORS.playerTower : ARENA_COLORS.enemyTower;
+      const bar = view.hpBar;
+      bar.clear();
+      bar.fillStyle(0x000000, 0.5);
+      bar.fillRect(-unit.radius, 0, barW, barH);
+      bar.fillStyle(fill, 1);
+      bar.fillRect(-unit.radius, 0, Math.max(0, barW * unit.hpRatio), barH);
       view.lastHp = unit.hp;
     }
-
-    const barW = unit.radius * 2;
-    const barH = 2;
-    const barX = unit.x - unit.radius;
-    const barY = unit.y - unit.radius - UNIT_LIFT - 4 + bob;
-    const fill = unit.team === 'player' ? ARENA_COLORS.playerTower : ARENA_COLORS.enemyTower;
-
-    const bar = view.hpBar;
-    bar.clear();
-    bar.fillStyle(0x000000, 0.5);
-    bar.fillRect(barX, barY, barW, barH);
-    bar.fillStyle(fill, 1);
-    bar.fillRect(barX, barY, Math.max(0, barW * unit.hpRatio), barH);
+    // Позицию бара двигаем без redraw — просто пересчёт x/y.
+    view.hpBar.x = unit.x;
+    view.hpBar.y = unit.y - unit.radius - UNIT_LIFT - 4 + bob;
   }
 
   private flashUnitDamage(unit: Unit, amount: number) {
@@ -1230,10 +1252,8 @@ export class ArenaScene extends Phaser.Scene {
   private handleProjectileHit(p: import('@/battle/types').Projectile) {
     const g = this.projectileViews.get(p.id);
     if (!g) return;
-    // Маленькая вспышка попадания. Рисуем круг в локальном (0,0)
-    // и позиционируем графику — иначе scale-tween «отлетает» от точки.
-    const flash = this.wG();
     const color = projectileColor(p.kind);
+    const flash = this.wG();
     flash.fillStyle(color, 0.85);
     flash.fillCircle(0, 0, 6);
     flash.lineStyle(1.6, projectileLightColor(p.kind), 0.9);
@@ -1247,25 +1267,8 @@ export class ArenaScene extends Phaser.Scene {
       duration: 220,
       onComplete: () => flash.destroy(),
     });
-    for (let i = 0; i < 5; i++) {
-      const shard = this.wG();
-      shard.fillStyle(color, 0.75);
-      shard.fillCircle(0, 0, 1.6);
-      shard.x = p.x;
-      shard.y = p.y;
-      const a = (Math.PI * 2 * i) / 5 + Math.random() * 0.35;
-      const dist = 8 + Math.random() * 9;
-      this.tweens.add({
-        targets: shard,
-        x: p.x + Math.cos(a) * dist,
-        y: p.y + Math.sin(a) * dist,
-        alpha: 0,
-        scale: 0.35,
-        duration: 240,
-        ease: 'Quad.Out',
-        onComplete: () => shard.destroy(),
-      });
-    }
+    // Шарды-частицы убраны: при много-юнитном бою они создавали 5 graphics
+    // на каждый хит — это главный источник GC-jank-а на мобиле.
     g.destroy();
     this.projectileViews.delete(p.id);
   }
@@ -1312,14 +1315,24 @@ export function createGame(parent: HTMLElement): Phaser.Game {
     type: Phaser.AUTO,
     parent,
     backgroundColor: '#0b0d12',
-    antialias: true,
+    // Антиалиас выключен — Graphics-примитивы выглядят так же, рендер дешевле.
+    antialias: false,
     pixelArt: false,
-    roundPixels: false,
+    roundPixels: true,
     resolution: RENDER_DPR,
+    fps: {
+      target: TARGET_FPS,
+      forceSetTimeOut: false,
+      smoothStep: true,
+    },
     render: {
-      antialias: true,
+      antialias: false,
       pixelArt: false,
-      roundPixels: false,
+      roundPixels: true,
+      // Не делаем clear на каждый кадр для статичной арены — оптимизация.
+      transparent: false,
+      // Power preference: предпочтительно low-power GPU режим на iOS.
+      powerPreference: 'low-power' as WebGLPowerPreference,
     },
     scale: {
       mode: Phaser.Scale.FIT,

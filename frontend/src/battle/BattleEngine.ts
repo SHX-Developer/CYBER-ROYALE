@@ -86,6 +86,8 @@ export class BattleEngine {
   private nextUnitId = 1;
   private nextProjectileId = 1;
   private nextHealZoneId = 1;
+  /** Накопитель для throttling time-tick события. */
+  private timeTickAccumMs = 0;
 
   constructor() {
     this.state = {
@@ -136,8 +138,14 @@ export class BattleEngine {
     if (this.state.timeMs >= this.state.matchDurationMs) {
       this.handleTimeout();
     } else {
-      const left = Math.max(0, this.state.matchDurationMs - this.state.timeMs);
-      this.emit({ kind: 'timeTick', timeLeftMs: left });
+      // Эмитим time-tick не каждый кадр, а раз в ~500мс — UI таймера
+      // обновляется 2 раза в секунду, что глазу более чем достаточно.
+      this.timeTickAccumMs += deltaMs;
+      if (this.timeTickAccumMs >= 500) {
+        this.timeTickAccumMs = 0;
+        const left = Math.max(0, this.state.matchDurationMs - this.state.timeMs);
+        this.emit({ kind: 'timeTick', timeLeftMs: left });
+      }
     }
   }
 

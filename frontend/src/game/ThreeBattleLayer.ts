@@ -25,11 +25,14 @@ const DEVICE_MEMORY_GB =
     : ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8);
 const CPU_THREADS = typeof navigator === 'undefined' ? 8 : navigator.hardwareConcurrency || 8;
 const IS_LOW_MOBILE = IS_COARSE_POINTER && (DEVICE_MEMORY_GB <= 4 || CPU_THREADS <= 4);
-const MOBILE_DPR_CAP = IS_LOW_MOBILE ? 2 : 2.35;
-const SHADOW_MAP_SIZE = IS_LOW_MOBILE ? 768 : 1024;
-const USE_SOFT_SHADOWS = !IS_LOW_MOBILE;
-// На мобилках тоже держим качественный рендер, но не выше разумного лимита.
-const MODEL_DPR = Math.min(IS_COARSE_POINTER ? MOBILE_DPR_CAP : 2.5, DEVICE_DPR);
+// АГРЕССИВНАЯ оптимизация под мобилы: телефон не должен греться.
+// На любых тач-устройствах DPR≤1.5 и без soft-shadows. На слабых ещё ниже.
+const MOBILE_DPR_CAP = IS_LOW_MOBILE ? 1.25 : 1.5;
+const SHADOW_MAP_SIZE = IS_LOW_MOBILE ? 384 : 512;
+const USE_SOFT_SHADOWS = false; // soft-shadows греют GPU — всегда выключены.
+const MODEL_DPR = Math.min(IS_COARSE_POINTER ? MOBILE_DPR_CAP : 2.0, DEVICE_DPR);
+/** Используем shadows только на desktop. Мобила без теней — заметно холоднее. */
+const USE_SHADOWS = !IS_COARSE_POINTER;
 
 // Универсальный масштаб всех юнитов — увеличен на 20% по запросу.
 const UNIT_SCALE = 1.2;
@@ -95,18 +98,22 @@ export class ThreeBattleLayer {
   ) {
     this.renderer = new THREE.WebGLRenderer({
       alpha: true,
-      antialias: true,
-      powerPreference: 'high-performance',
-      // Стабильная отрисовка на iOS Safari.
+      // Anti-aliasing на мобиле — слишком дорого. На desktop оставляем.
+      antialias: !IS_COARSE_POINTER,
+      // Low-power режим, чтобы iOS выбирал «холодный» GPU.
+      powerPreference: IS_COARSE_POINTER ? 'low-power' : 'high-performance',
       preserveDrawingBuffer: false,
       stencil: false,
     });
     this.renderer.setPixelRatio(MODEL_DPR);
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = IS_COARSE_POINTER ? 1.12 : 1.08;
-    this.renderer.shadowMap.enabled = true;
+    // ACES tone mapping тоже стоит fragment-времени — на мобиле используем линейный.
+    this.renderer.toneMapping = IS_COARSE_POINTER
+      ? THREE.LinearToneMapping
+      : THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = IS_COARSE_POINTER ? 1.0 : 1.08;
+    this.renderer.shadowMap.enabled = USE_SHADOWS;
     this.renderer.shadowMap.type = USE_SOFT_SHADOWS
       ? THREE.PCFSoftShadowMap
       : THREE.PCFShadowMap;
